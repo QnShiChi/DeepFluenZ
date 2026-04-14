@@ -184,6 +184,62 @@ async def test_course_assistant_qa_mode_streams_grounded_answer(
 
 
 @pytest.mark.asyncio
+async def test_course_assistant_exam_mode_returns_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            assert name == "rag"
+            return SimpleNamespace(
+                content="Linear regression, logistic regression, decision trees.",
+                metadata={"sources": [{"title": "ML Basics"}]},
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": kwargs["query"]}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                '{"questions":[{"prompt":"Q1","type":"short_answer","answer_hint":"A1"},'
+                '{"prompt":"Q2","type":"multiple_choice","answer_hint":"A2"},'
+                '{"prompt":"Q3","type":"short_answer","answer_hint":"A3"}]}'
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="Generate 3 questions about basic machine learning algorithms.",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "exam", "num_questions": 3},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "exam"
+    assert len(result_event.metadata["artifacts"]["questions"]) == 3
+    assert result_event.metadata["artifacts"]["questions"][0]["answer_hint"] == "A1"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("enabled_tools", "knowledge_bases", "expected_tools", "expected_kb", "expected_disable"),
     [

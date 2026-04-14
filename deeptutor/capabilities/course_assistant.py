@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +156,60 @@ class CourseAssistantCapability(BaseCapability):
         kb_name: str,
         stream: StreamBus,
     ) -> dict[str, Any]:
-        raise RuntimeError("exam mode is not implemented yet")
+        await stream.progress(
+            message=f"Retrieving exam context from {kb_name}.",
+            source=self.name,
+            stage="processing",
+        )
+        rag_result = await get_tool_registry().execute(
+            "rag",
+            query=context.user_message,
+            kb_name=kb_name,
+            top_k=config.top_k,
+        )
+        grounded_context = str(rag_result.content or "")
+
+        await stream.progress(
+            message=f"Generating {config.num_questions} questions.",
+            source=self.name,
+            stage="generating",
+        )
+        llm_config = get_llm_config()
+        raw = await sdk_complete(
+            prompt=self._render_prompt(
+                "exam_generator.md",
+                user_message=context.user_message,
+                kb_name=kb_name,
+                grounded_context=grounded_context,
+                num_questions=config.num_questions,
+                difficulty=config.difficulty,
+                question_type=config.question_type,
+            ),
+            system_prompt="You are a course assistant.",
+            provider_name=llm_config.binding,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
+            base_url=llm_config.base_url,
+            api_version=llm_config.api_version,
+        )
+        parsed = json.loads(raw)
+        questions = list(parsed.get("questions", []))
+        response = "\n\n".join(
+            f"{idx + 1}. {item['prompt']}\nHint: {item['answer_hint']}"
+            for idx, item in enumerate(questions)
+        )
+
+        return {
+            "mode": "exam",
+            "response": response,
+            "sources": list(rag_result.sources or []) if config.include_sources else [],
+            "artifacts": {"questions": questions},
+            "metadata": {
+                "kb_name": kb_name,
+                "retrieved_count": len((rag_result.metadata or {}).get("sources", [])),
+                "degraded": not bool(grounded_context.strip()),
+            },
+        }
 
     async def _run_study_plan(
         self,
