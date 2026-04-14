@@ -644,7 +644,7 @@ async def test_deep_research_capability_requires_explicit_config_and_streams_tra
             captured["pipeline_init"] = kwargs
 
         async def run(self, topic: str) -> dict[str, Any]:
-            await captured["pipeline_init"]["progress_callback"](
+            captured["pipeline_init"]["progress_callback"](
                 {"status": "gathering evidence", "stage": "researching", "block_id": "block_1"}
             )
             await captured["pipeline_init"]["trace_callback"](
@@ -705,6 +705,12 @@ async def test_deep_research_capability_requires_explicit_config_and_streams_tra
             "mode": "report",
             "depth": "standard",
             "sources": ["kb", "web", "papers"],
+            "confirmed_outline": [
+                {
+                    "title": "Core themes",
+                    "overview": "Focus on the main ideas in the topic.",
+                }
+            ],
         },
         language="en",
     )
