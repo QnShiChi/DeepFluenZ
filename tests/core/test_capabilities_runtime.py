@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from deeptutor.capabilities.chat import ChatCapability
+from deeptutor.capabilities.course_assistant import CourseAssistantCapability
 from deeptutor.capabilities.deep_question import DeepQuestionCapability
 from deeptutor.capabilities.deep_research import DeepResearchCapability
 from deeptutor.capabilities.deep_solve import DeepSolveCapability
@@ -107,6 +108,215 @@ async def test_chat_capability_streams_content_and_geogebra_context(
     assert any(event.type == StreamEventType.SOURCES for event in events)
     assert any(event.type == StreamEventType.CONTENT and "assistant output" in event.content for event in events)
     assert "GGB commands" in captured["process"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_qa_mode_streams_grounded_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            assert name == "rag"
+            assert kwargs["query"] == "What is overfitting?"
+            assert kwargs["kb_name"] == "ai-course"
+            return SimpleNamespace(
+                content="Overfitting is when a model memorizes training data.",
+                metadata={
+                    "answer": "Overfitting is when a model memorizes training data.",
+                    "sources": [{"title": "Lecture 5", "content": "Overfitting happens ..."}],
+                },
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": "What is overfitting?"}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                "Overfitting happens when the model memorizes the training data "
+                "instead of generalizing."
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="What is overfitting?",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "qa"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    assert any(
+        event.type == StreamEventType.PROGRESS and event.stage == "understanding"
+        for event in events
+    )
+    assert any(
+        event.type == StreamEventType.PROGRESS and event.stage == "processing"
+        for event in events
+    )
+    assert any(
+        event.type == StreamEventType.CONTENT
+        and "memorizes the training data" in event.content
+        for event in events
+    )
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "qa"
+    assert result_event.metadata["metadata"]["kb_name"] == "ai-course"
+    assert result_event.metadata["sources"][0]["type"] == "rag"
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_exam_mode_returns_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            assert name == "rag"
+            return SimpleNamespace(
+                content="Linear regression, logistic regression, decision trees.",
+                metadata={"sources": [{"title": "ML Basics"}]},
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": kwargs["query"]}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                '{"questions":[{"prompt":"Q1","type":"short_answer","answer_hint":"A1"},'
+                '{"prompt":"Q2","type":"multiple_choice","answer_hint":"A2"},'
+                '{"prompt":"Q3","type":"short_answer","answer_hint":"A3"}]}'
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="Generate 3 questions about basic machine learning algorithms.",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "exam", "num_questions": 3},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "exam"
+    assert len(result_event.metadata["artifacts"]["questions"]) == 3
+    assert result_event.metadata["artifacts"]["questions"][0]["answer_hint"] == "A1"
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_study_plan_mode_returns_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            return SimpleNamespace(
+                content="Week 1: AI intro. Week 2: ML basics. Week 3: data preprocessing.",
+                metadata={"sources": [{"title": "Course outline"}]},
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": kwargs["query"]}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                '{"plan":[{"title":"Week 1","topics":["AI introduction"],'
+                '"goal":"Understand definitions"},{"title":"Week 2",'
+                '"topics":["Machine learning basics"],"goal":"Review core algorithms"}]}'
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="Create a revision plan for the AI course.",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "study_plan"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "study_plan"
+    assert result_event.metadata["artifacts"]["plan"][0]["title"] == "Week 1"
+    assert "Week 1" in result_event.metadata["response"]
+
+
+def test_course_assistant_registered_in_builtin_capabilities() -> None:
+    from deeptutor.runtime.bootstrap.builtin_capabilities import BUILTIN_CAPABILITY_CLASSES
+
+    assert BUILTIN_CAPABILITY_CLASSES["course_assistant"] == (
+        "deeptutor.capabilities.course_assistant:CourseAssistantCapability"
+    )
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_errors_when_kb_missing() -> None:
+    context = UnifiedContext(
+        user_message="What is overfitting?",
+        active_capability="course_assistant",
+        knowledge_bases=[],
+        config_overrides={"mode": "qa"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    error_event = next(event for event in events if event.type == StreamEventType.ERROR)
+    assert "requires a selected knowledge base" in error_event.content
 
 
 @pytest.mark.asyncio
@@ -434,7 +644,7 @@ async def test_deep_research_capability_requires_explicit_config_and_streams_tra
             captured["pipeline_init"] = kwargs
 
         async def run(self, topic: str) -> dict[str, Any]:
-            await captured["pipeline_init"]["progress_callback"](
+            captured["pipeline_init"]["progress_callback"](
                 {"status": "gathering evidence", "stage": "researching", "block_id": "block_1"}
             )
             await captured["pipeline_init"]["trace_callback"](
@@ -495,6 +705,12 @@ async def test_deep_research_capability_requires_explicit_config_and_streams_tra
             "mode": "report",
             "depth": "standard",
             "sources": ["kb", "web", "papers"],
+            "confirmed_outline": [
+                {
+                    "title": "Core themes",
+                    "overview": "Focus on the main ideas in the topic.",
+                }
+            ],
         },
         language="en",
     )
