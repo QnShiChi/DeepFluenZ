@@ -47,6 +47,21 @@ class VisualizeRequestConfig(BaseModel):
     render_mode: Literal["auto", "svg", "chartjs", "mermaid"] = "auto"
 
 
+class CourseAssistantRequestConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["qa", "exam", "study_plan", "summary"] = "qa"
+    kb_name: str = ""
+    top_k: int = Field(default=5, ge=1, le=20)
+    num_questions: int = Field(default=3, ge=1, le=20)
+    difficulty: str = ""
+    question_type: str = ""
+    chapter: str = ""
+    section: str = ""
+    output_format: Literal["markdown", "json"] = "markdown"
+    include_sources: bool = True
+
+
 def _clean_public_config(raw_config: dict[str, Any] | None) -> dict[str, Any]:
     if raw_config is None:
         return {}
@@ -97,6 +112,16 @@ def validate_visualize_request_config(
     return _validate_model(VisualizeRequestConfig, raw_config, label="visualize")
 
 
+def validate_course_assistant_request_config(
+    raw_config: dict[str, Any] | None,
+) -> CourseAssistantRequestConfig:
+    return _validate_model(
+        CourseAssistantRequestConfig,
+        raw_config,
+        label="course assistant",
+    )
+
+
 def build_request_schema(model_type: type[BaseModel]) -> dict[str, Any]:
     return model_type.model_json_schema(mode="validation")
 
@@ -108,6 +133,7 @@ CAPABILITY_CONFIG_VALIDATORS: dict[str, Callable[[dict[str, Any] | None], Any]] 
     "deep_research": validate_research_request_config,
     "math_animator": validate_math_animator_request_config,
     "visualize": validate_visualize_request_config,
+    "course_assistant": validate_course_assistant_request_config,
 }
 
 CAPABILITY_REQUEST_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -117,6 +143,7 @@ CAPABILITY_REQUEST_SCHEMAS: dict[str, dict[str, Any]] = {
     "deep_research": build_request_schema(DeepResearchRequestConfig),
     "math_animator": build_request_schema(MathAnimatorRequestConfig),
     "visualize": build_request_schema(VisualizeRequestConfig),
+    "course_assistant": build_request_schema(CourseAssistantRequestConfig),
 }
 
 
@@ -138,6 +165,7 @@ __all__ = [
     "CAPABILITY_CONFIG_VALIDATORS",
     "CAPABILITY_REQUEST_SCHEMAS",
     "ChatRequestConfig",
+    "CourseAssistantRequestConfig",
     "DeepQuestionRequestConfig",
     "DeepSolveRequestConfig",
     "VisualizeRequestConfig",
@@ -145,6 +173,7 @@ __all__ = [
     "get_capability_request_schema",
     "validate_capability_config",
     "validate_chat_request_config",
+    "validate_course_assistant_request_config",
     "validate_deep_question_request_config",
     "validate_deep_solve_request_config",
     "validate_visualize_request_config",
