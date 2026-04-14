@@ -30,26 +30,29 @@ class CourseAssistantCapability(BaseCapability):
     )
 
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
-        config = validate_course_assistant_request_config(context.config_overrides)
-        kb_name = self._resolve_kb_name(context, config)
+        try:
+            config = validate_course_assistant_request_config(context.config_overrides)
+            kb_name = self._resolve_kb_name(context, config)
 
-        await stream.progress(
-            message=f"Understanding {config.mode} request for {kb_name}.",
-            source=self.name,
-            stage="understanding",
-        )
+            await stream.progress(
+                message=f"Understanding {config.mode} request for {kb_name}.",
+                source=self.name,
+                stage="understanding",
+            )
 
-        if config.mode == "qa":
-            payload = await self._run_qa(context, config, kb_name, stream)
-        elif config.mode == "exam":
-            payload = await self._run_exam(context, config, kb_name, stream)
-        elif config.mode == "study_plan":
-            payload = await self._run_study_plan(context, config, kb_name, stream)
-        else:
-            payload = await self._run_summary(context, config, kb_name, stream)
+            if config.mode == "qa":
+                payload = await self._run_qa(context, config, kb_name, stream)
+            elif config.mode == "exam":
+                payload = await self._run_exam(context, config, kb_name, stream)
+            elif config.mode == "study_plan":
+                payload = await self._run_study_plan(context, config, kb_name, stream)
+            else:
+                payload = await self._run_summary(context, config, kb_name, stream)
 
-        await stream.content(payload["response"], source=self.name, stage="result")
-        await stream.result(payload, source=self.name)
+            await stream.content(payload["response"], source=self.name, stage="result")
+            await stream.result(payload, source=self.name)
+        except Exception as exc:
+            await stream.error(str(exc), source=self.name, stage="result")
 
     def _resolve_kb_name(
         self,

@@ -294,6 +294,31 @@ async def test_course_assistant_study_plan_mode_returns_plan(
     assert "Week 1" in result_event.metadata["response"]
 
 
+def test_course_assistant_registered_in_builtin_capabilities() -> None:
+    from deeptutor.runtime.bootstrap.builtin_capabilities import BUILTIN_CAPABILITY_CLASSES
+
+    assert BUILTIN_CAPABILITY_CLASSES["course_assistant"] == (
+        "deeptutor.capabilities.course_assistant:CourseAssistantCapability"
+    )
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_errors_when_kb_missing() -> None:
+    context = UnifiedContext(
+        user_message="What is overfitting?",
+        active_capability="course_assistant",
+        knowledge_bases=[],
+        config_overrides={"mode": "qa"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    error_event = next(event for event in events if event.type == StreamEventType.ERROR)
+    assert "requires a selected knowledge base" in error_event.content
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("enabled_tools", "knowledge_bases", "expected_tools", "expected_kb", "expected_disable"),
