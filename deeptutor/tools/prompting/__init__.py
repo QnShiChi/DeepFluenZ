@@ -12,6 +12,10 @@ from deeptutor.core.tool_protocol import ToolAlias, ToolPromptHints
 ToolHintEntry = tuple[str, ToolPromptHints]
 
 _GUIDELINE_HEADER = {
+    "vi": (
+        "**Tự động quyết định nên dùng công cụ nào** dựa trên mục tiêu hiện tại "
+        "và các bằng chứng đã thu thập. Hãy cân nhắc toàn bộ lựa chọn sẵn có:"
+    ),
     "en": (
         "**Autonomously decide which tool to use** based on the current sub-goal "
         "and the evidence gathered so far. Consider all available options:"
@@ -23,6 +27,13 @@ _GUIDELINE_HEADER = {
 }
 
 _PHASE_LABELS = {
+    "vi": {
+        "exploration": "Giai đoạn 1: Khám phá",
+        "expansion": "Giai đoạn 2: Mở rộng",
+        "synthesis": "Giai đoạn 3: Tổng hợp",
+        "verification": "Giai đoạn 4: Kiểm chứng",
+        "other": "Công cụ khác",
+    },
     "en": {
         "exploration": "Phase 1: Exploration",
         "expansion": "Phase 2: Expansion",
@@ -44,6 +55,8 @@ _PHASE_ORDER = ["exploration", "expansion", "synthesis", "verification", "other"
 
 def _normalize_language(language: str) -> str:
     normalized = language.lower()
+    if normalized.startswith("vi"):
+        return "vi"
     if normalized.startswith("zh"):
         return "zh"
     if normalized.startswith("en"):

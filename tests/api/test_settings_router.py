@@ -342,3 +342,28 @@ async def test_complete_tour_invalidates_runtime_caches(
     assert new_llm_client is not old_llm_client
     assert new_embedding_client is not old_embedding_client
     assert '"status": "completed"' in cache
+
+
+@pytest.mark.asyncio
+async def test_update_ui_settings_accepts_vietnamese_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved_payload: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        settings_router,
+        "load_ui_settings",
+        lambda: deepcopy(settings_router.DEFAULT_UI_SETTINGS),
+    )
+    monkeypatch.setattr(
+        settings_router,
+        "save_ui_settings",
+        lambda settings: saved_payload.update(deepcopy(settings)),
+    )
+
+    response = await settings_router.update_ui_settings(
+        settings_router.UISettings(language="vi")
+    )
+
+    assert response["language"] == "vi"
+    assert saved_payload["language"] == "vi"

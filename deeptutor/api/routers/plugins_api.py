@@ -45,7 +45,7 @@ class CapabilityExecuteRequest(BaseModel):
     content: str
     tools: list[str] = []
     knowledge_bases: list[str] = []
-    language: str = "en"
+    language: str = "vi"
     config: dict[str, Any] = {}
     attachments: list[dict[str, Any]] = []
 

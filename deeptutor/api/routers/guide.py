@@ -92,7 +92,7 @@ def get_guide_manager():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM config error: {e!s}")
 
-    ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+    ui_language = get_ui_language(default=config.get("system", {}).get("language", "vi"))
     _guide_manager = GuideManager(
         api_key=api_key,
         base_url=base_url,
@@ -152,7 +152,7 @@ async def create_session(request: CreateSessionRequest):
         if request.notebook_references:
             selected_records = notebook_manager.get_records_by_references(request.notebook_references)
             if selected_records:
-                analysis_agent = NotebookAnalysisAgent(language=get_ui_language(default="en"))
+                analysis_agent = NotebookAnalysisAgent(language=get_ui_language(default="vi"))
                 notebook_context = await analysis_agent.analyze(
                     user_question=raw_user_input,
                     records=selected_records,

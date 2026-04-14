@@ -2,13 +2,15 @@ import i18n, { type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import enApp from "@/locales/en/app.json";
+import viApp from "@/locales/vi/app.json";
 import zhApp from "@/locales/zh/app.json";
 
-export type AppLanguage = "en" | "zh";
+export type AppLanguage = "en" | "zh" | "vi";
 
 export function normalizeLanguage(lang: unknown): AppLanguage {
-  if (!lang) return "en";
+  if (!lang) return "vi";
   const s = String(lang).toLowerCase();
+  if (s === "vi" || s === "vn" || s === "vietnamese") return "vi";
   if (s === "zh" || s === "cn" || s === "chinese") return "zh";
   return "en";
 }
@@ -20,13 +22,14 @@ export function initI18n(language?: unknown) {
 
   const resources: Resource = {
     en: { app: enApp },
+    vi: { app: viApp },
     zh: { app: zhApp },
   };
 
   i18n.use(initReactI18next).init({
     resources,
     lng: normalizeLanguage(language),
-    fallbackLng: "en",
+    fallbackLng: "vi",
     // Use a single default namespace to keep lookups simple.
     // We intentionally keep keySeparator disabled so keys like "Generating..." remain valid.
     defaultNS: "app",

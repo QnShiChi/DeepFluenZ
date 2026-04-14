@@ -20,6 +20,7 @@ class PromptManager:
 
     # Language fallback chain: if primary language not found, try alternatives
     LANGUAGE_FALLBACKS = {
+        "vi": ["vi", "en", "zh", "cn"],
         "zh": ["zh", "cn", "en"],
         "en": ["en", "zh", "cn"],
     }

@@ -38,7 +38,7 @@ _edit_agent: EditAgent | None = None
 
 def _current_language() -> str:
     # Prefer UI settings, fall back to main.yaml system.language
-    return get_ui_language(default=config.get("system", {}).get("language", "en"))
+    return get_ui_language(default=config.get("system", {}).get("language", "vi"))
 
 
 def get_edit_agent() -> EditAgent:
@@ -502,4 +502,3 @@ async def export_markdown(content: dict):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

@@ -31,7 +31,7 @@ class FileUpdateRequest(BaseModel):
 
 class MemoryRefreshRequest(BaseModel):
     session_id: str | None = None
-    language: str = "en"
+    language: str = "vi"
 
 
 class MemoryClearRequest(BaseModel):

@@ -344,6 +344,28 @@ class BaseAgent(ABC):
             response=response,
         )
 
+    def _language_instruction(self) -> str:
+        """Return a short output-language guardrail appended to system prompts."""
+        normalized = str(self.language or "vi").lower()
+        if normalized.startswith("vi"):
+            return (
+                "You must write the final answer entirely in Vietnamese. "
+                "Do not switch to English or Chinese unless the user explicitly asks for it. "
+                "Keep technical terms accurate, but explain them in Vietnamese."
+            )
+        if normalized.startswith("zh"):
+            return "You must write the final answer entirely in Chinese unless the user explicitly asks for another language."
+        return "You must write the final answer entirely in English unless the user explicitly asks for another language."
+
+    def _augment_system_prompt(self, system_prompt: str) -> str:
+        instruction = self._language_instruction().strip()
+        base = (system_prompt or "").strip()
+        if not base:
+            return instruction
+        if instruction in base:
+            return base
+        return f"{base}\n\n{instruction}"
+
     # -------------------------------------------------------------------------
     # LLM Call Interface
     # -------------------------------------------------------------------------
@@ -387,6 +409,8 @@ class BaseAgent(ABC):
         temperature = temperature if temperature is not None else self.get_temperature()
         max_tokens = max_tokens if max_tokens is not None else self.get_max_tokens()
         max_retries = self.get_max_retries()
+
+        system_prompt = self._augment_system_prompt(system_prompt)
 
         # Record call start time
         start_time = time.time()
@@ -538,6 +562,7 @@ class BaseAgent(ABC):
             Response chunks as strings
         """
         model = model or self.get_model()
+        system_prompt = self._augment_system_prompt(system_prompt)
         temperature = temperature if temperature is not None else self.get_temperature()
         max_tokens = max_tokens if max_tokens is not None else self.get_max_tokens()
 

@@ -112,7 +112,7 @@ async def websocket_chat(websocket: WebSocket):
             # Receive message
             data = await websocket.receive_json()
             # Use current UI language (fallback to config/main.yaml system.language)
-            language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+            language = get_ui_language(default=config.get("system", {}).get("language", "vi"))
             message = data.get("message", "").strip()
             session_id = data.get("session_id")
             explicit_history = data.get("history")  # Optional override

@@ -39,7 +39,7 @@ class UnifiedContext:
         knowledge_bases: KB names to use for RAG.
         attachments: Images / files sent with the message.
         config_overrides: Per-request config tweaks (e.g. temperature).
-        language: UI / response language ("en" | "zh").
+        language: UI / response language ("vi" | "en" | "zh").
         metadata: Catch-all for capability-specific extras.
     """
 
@@ -51,7 +51,7 @@ class UnifiedContext:
     knowledge_bases: list[str] = field(default_factory=list)
     attachments: list[Attachment] = field(default_factory=list)
     config_overrides: dict[str, Any] = field(default_factory=dict)
-    language: str = "en"
+    language: str = "vi"
     notebook_context: str = ""
     history_context: str = ""
     memory_context: str = ""

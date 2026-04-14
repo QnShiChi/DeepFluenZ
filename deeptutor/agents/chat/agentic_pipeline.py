@@ -58,7 +58,13 @@ class AgenticChatPipeline:
     """Run chat as a 4-stage agentic pipeline."""
 
     def __init__(self, language: str = "en") -> None:
-        self.language = "zh" if language.lower().startswith("zh") else "en"
+        normalized = str(language or "vi").lower()
+        if normalized.startswith("zh"):
+            self.language = "zh"
+        elif normalized.startswith("vi"):
+            self.language = "vi"
+        else:
+            self.language = "en"
         self.llm_config = get_llm_config()
         self.binding = getattr(self.llm_config, "binding", None) or "openai"
         self.model = getattr(self.llm_config, "model", None)
@@ -67,6 +73,25 @@ class AgenticChatPipeline:
         self.api_version = getattr(self.llm_config, "api_version", None)
         self.registry = get_tool_registry()
         self._usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+
+    def _language_instruction(self) -> str:
+        if self.language == "vi":
+            return (
+                "You must write all user-facing responses entirely in Vietnamese. "
+                "Do not switch to English or Chinese unless the user explicitly requests it."
+            )
+        if self.language == "zh":
+            return "You must write all user-facing responses entirely in Chinese unless the user explicitly requests another language."
+        return "You must write all user-facing responses entirely in English unless the user explicitly requests another language."
+
+    def _augment_system_prompt(self, system_prompt: str) -> str:
+        instruction = self._language_instruction()
+        base = (system_prompt or "").strip()
+        if not base:
+            return instruction
+        if instruction in base:
+            return base
+        return f"{base}\n\n{instruction}"
 
     def _accumulate_usage(self, response: Any) -> None:
         usage = getattr(response, "usage", None)
@@ -705,7 +730,7 @@ class AgenticChatPipeline:
             ),
         )
         _fb_prompt = self._acting_user_prompt(context, thinking_text)
-        _fb_system = self._react_fallback_system_prompt(tool_table)
+        _fb_system = self._augment_system_prompt(self._react_fallback_system_prompt(tool_table))
         _chunks: list[str] = []
         async for _c in llm_stream(
             prompt=_fb_prompt,
@@ -851,7 +876,7 @@ class AgenticChatPipeline:
         system_prompt: str,
         user_content: str,
     ) -> list[dict[str, Any]]:
-        system_parts = [system_prompt]
+        system_parts = [self._augment_system_prompt(system_prompt)]
         if context.memory_context:
             system_parts.append(context.memory_context)
 

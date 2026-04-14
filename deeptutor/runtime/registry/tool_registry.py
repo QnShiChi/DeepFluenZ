@@ -93,7 +93,7 @@ class ToolRegistry:
     def get_prompt_hints(
         self,
         names: list[str],
-        language: str = "en",
+        language: str = "vi",
     ) -> list[tuple[str, ToolPromptHints]]:
         """Return prompt hints for the given tool names."""
         entries: list[tuple[str, ToolPromptHints]] = []
@@ -105,7 +105,7 @@ class ToolRegistry:
         self,
         names: list[str],
         format: str = "list",
-        language: str = "en",
+        language: str = "vi",
         **opts: Any,
     ) -> str:
         """Compose prompt text for the given tools."""

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose *)",
+      "Bash(docker compose ps)",
+      "Bash(docker compose *)",
+      "Bash(docker images)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(sleep *)",
+      "Bash(pip3 install *)",
+      "Bash(source *)",
+      "Bash(deeptutor *)",
+      "Bash(curl *)",
+      "Bash(lsof *)",
+      "Bash(xargs *)",
+      "Bash(nohup *)",
+      "Bash(pip install *)"
+    ]
+  },
+  "$version": 3
+}

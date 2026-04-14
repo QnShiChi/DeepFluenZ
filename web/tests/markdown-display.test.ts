@@ -30,6 +30,15 @@ test("normalizeMarkdownForDisplay keeps meaningful tables", () => {
   assert.equal(normalizeMarkdownForDisplay(input), input);
 });
 
+test("normalizeMarkdownForDisplay strips pseudo hyperlink tags from model output", () => {
+  const input =
+    "Before\n\n<hyperlink>DeepTutor</hyperlink>\n<href>https://example.com</href>\n\nAfter";
+  assert.equal(
+    normalizeMarkdownForDisplay(input),
+    "Before\n\nDeepTutor\nhttps://example.com\n\nAfter",
+  );
+});
+
 test("hasVisibleMarkdownContent rejects empty raw-html placeholders", () => {
   assert.equal(
     hasVisibleMarkdownContent("<details><summary></summary></details>"),

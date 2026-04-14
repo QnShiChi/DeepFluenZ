@@ -14,6 +14,7 @@ const EMPTY_FENCED_CODE_BLOCK_REGEX = /```[^\n`]*\n?\s*```/g;
 const EMPTY_HTML_BLOCK_REGEX =
   /<(p|div|section|article|aside|blockquote)(?:\s[^>]*)?>\s*(?:&nbsp;|\s|<br\s*\/?>)*\s*<\/\1>/gi;
 const HTML_TABLE_REGEX = /<table(?:\s[^>]*)?>[\s\S]*?<\/table>/gi;
+const MODEL_PSEUDO_LINK_TAG_REGEX = /<\/?(hyperlink|href)(?:\s[^>]*)?>/gi;
 
 function stripInvisibleCharacters(value: string): string {
   return value.replace(ZERO_WIDTH_REGEX, "");
@@ -161,6 +162,7 @@ export function normalizeMarkdownForDisplay(content: string): string {
 
   const normalized = stripInvisibleCharacters(String(content))
     .replace(/\r\n/g, "\n")
+    .replace(MODEL_PSEUDO_LINK_TAG_REGEX, "")
     .replace(EMPTY_DETAILS_REGEX, "")
     .replace(EMPTY_SUMMARY_REGEX, "")
     .replace(EMPTY_PROGRESS_REGEX, "")

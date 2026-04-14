@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from deeptutor.services.config.loader import PROJECT_ROOT, load_config_with_main, resolve_config_path
+from deeptutor.services.config.loader import (
+    PROJECT_ROOT,
+    load_config_with_main,
+    parse_language,
+    resolve_config_path,
+)
 
 
 def test_resolve_config_path_returns_existing_config(tmp_path: Path) -> None:
@@ -51,3 +56,14 @@ def test_load_config_with_main_uses_explicit_project_root() -> None:
 
     assert "system" in config
     assert config["paths"]["solve_output_dir"].endswith("data/user/workspace/chat/deep_solve")
+
+
+def test_parse_language_supports_vietnamese_aliases() -> None:
+    assert parse_language("vi") == "vi"
+    assert parse_language("VI") == "vi"
+    assert parse_language("vietnamese") == "vi"
+
+
+def test_parse_language_defaults_to_vietnamese() -> None:
+    assert parse_language(None) == "vi"
+    assert parse_language("") == "vi"

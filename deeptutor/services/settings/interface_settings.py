@@ -18,13 +18,14 @@ INTERFACE_SETTINGS_FILE = _path_service.get_settings_file("interface")
 
 DEFAULT_UI_SETTINGS: dict[str, Any] = {
     "theme": "light",
-    "language": "en",
+    "language": "vi",
 }
 
 
-def _normalize_language(language: Any, default: str = "en") -> str:
+def _normalize_language(language: Any, default: str = "vi") -> str:
     """
     Normalize language codes:
+    - vi/vietnamese -> vi
     - en/english -> en
     - zh/chinese/cn -> zh
     """
@@ -33,6 +34,8 @@ def _normalize_language(language: Any, default: str = "en") -> str:
 
     if isinstance(language, str):
         s = language.lower().strip()
+        if s in {"vi", "vietnamese", "vn"}:
+            return "vi"
         if s in {"en", "english"}:
             return "en"
         if s in {"zh", "chinese", "cn"}:
@@ -40,8 +43,8 @@ def _normalize_language(language: Any, default: str = "en") -> str:
 
     # Fall back to default
     if isinstance(default, str):
-        return _normalize_language(default, "en")
-    return "en"
+        return _normalize_language(default, "vi")
+    return "vi"
 
 
 def get_ui_settings() -> dict[str, Any]:
@@ -67,14 +70,14 @@ def get_ui_settings() -> dict[str, Any]:
     return DEFAULT_UI_SETTINGS.copy()
 
 
-def get_ui_language(default: str = "en") -> str:
+def get_ui_language(default: str = "vi") -> str:
     """
     Get current UI language.
 
     Priority:
     1) interface.json
     2) provided default
-    3) 'en'
+    3) 'vi'
     """
     settings = get_ui_settings()
     return _normalize_language(settings.get("language"), default)

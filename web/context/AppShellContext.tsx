@@ -16,7 +16,7 @@ import {
   type Theme,
 } from "@/lib/theme";
 
-export type AppLanguage = "en" | "zh";
+export type AppLanguage = "en" | "zh" | "vi";
 
 export const ACTIVE_SESSION_STORAGE_KEY = "deeptutor.activeSessionId.tab";
 export const LANGUAGE_STORAGE_KEY = "deeptutor-language";
@@ -25,15 +25,17 @@ const ACTIVE_SESSION_EVENT = "deeptutor:active-session";
 const LANGUAGE_EVENT = "deeptutor:language";
 
 function normalizeLanguage(value: string | null | undefined): AppLanguage {
-  return value === "zh" ? "zh" : "en";
+  if (value === "zh") return "zh";
+  if (value === "vi") return "vi";
+  return "en";
 }
 
 export function readStoredLanguage(): AppLanguage {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return "vi";
   try {
     return normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
   } catch {
-    return "en";
+    return "vi";
   }
 }
 
@@ -97,8 +99,8 @@ export function AppShellProvider({
   const [theme, setThemeState] = useState<Theme>(() => {
     return getStoredTheme() ?? getSystemTheme();
   });
-  // Always start with "en" to match SSR; hydrate from localStorage after mount
-  const [language, setLanguageState] = useState<AppLanguage>("en");
+  // Always start with "vi" to match the app default; hydrate from localStorage after mount
+  const [language, setLanguageState] = useState<AppLanguage>("vi");
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(() =>
     readStoredActiveSessionId(),
   );

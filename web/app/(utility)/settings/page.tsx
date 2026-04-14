@@ -67,7 +67,7 @@ type Catalog = {
 
 type UiSettings = {
   theme: "light" | "dark" | "glass";
-  language: "en" | "zh";
+  language: "en" | "zh" | "vi";
 };
 
 type ProviderOption = { value: string; label: string; base_url?: string };
@@ -368,7 +368,7 @@ function SettingsPageContent() {
 
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [theme, setTheme] = useState<"light" | "dark" | "glass">("light");
-  const [language, setLanguage] = useState<"en" | "zh">("en");
+  const [language, setLanguage] = useState<"en" | "zh" | "vi">("vi");
   const [catalog, setCatalog] = useState<Catalog>(defaultCatalog());
   const [draft, setDraft] = useState<Catalog>(defaultCatalog());
   const [activeService, setActiveService] = useState<ServiceName>("llm");
@@ -460,7 +460,10 @@ function SettingsPageContent() {
 
   // -- UI preference helpers ----------------------------------------------
 
-  const persistUi = async (nextTheme: "light" | "dark" | "glass", nextLanguage: "en" | "zh") => {
+  const persistUi = async (
+    nextTheme: "light" | "dark" | "glass",
+    nextLanguage: "en" | "zh" | "vi",
+  ) => {
     await fetch(apiUrl("/api/v1/settings/ui"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -474,7 +477,7 @@ function SettingsPageContent() {
     await persistUi(nextTheme, language);
   };
 
-  const updateLanguage = async (nextLanguage: "en" | "zh") => {
+  const updateLanguage = async (nextLanguage: "en" | "zh" | "vi") => {
     setLanguage(nextLanguage);
     writeStoredLanguage(nextLanguage);
     await persistUi(theme, nextLanguage);
@@ -880,7 +883,7 @@ function SettingsPageContent() {
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-[var(--muted-foreground)]">{t("Language")}</span>
             <div className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5">
-              {(["en", "zh"] as const).map((v) => (
+              {(["vi", "en", "zh"] as const).map((v) => (
                 <button
                   key={v}
                   onClick={() => updateLanguage(v)}
@@ -890,7 +893,7 @@ function SettingsPageContent() {
                       : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >
-                  {v === "en" ? "English" : "中文"}
+                  {v === "vi" ? "Tiếng Việt" : v === "en" ? "English" : "中文"}
                 </button>
               ))}
             </div>

@@ -206,7 +206,7 @@ async def websocket_solve(websocket: WebSocket):
             await websocket.send_json({"type": "error", "content": f"LLM configuration error: {e}"})
             return
 
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(default=config.get("system", {}).get("language", "vi"))
         solver = MainSolver(
             kb_name=kb_name,
             output_base_dir=str(output_base),
