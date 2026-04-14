@@ -240,6 +240,61 @@ async def test_course_assistant_exam_mode_returns_questions(
 
 
 @pytest.mark.asyncio
+async def test_course_assistant_study_plan_mode_returns_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            return SimpleNamespace(
+                content="Week 1: AI intro. Week 2: ML basics. Week 3: data preprocessing.",
+                metadata={"sources": [{"title": "Course outline"}]},
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": kwargs["query"]}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                '{"plan":[{"title":"Week 1","topics":["AI introduction"],'
+                '"goal":"Understand definitions"},{"title":"Week 2",'
+                '"topics":["Machine learning basics"],"goal":"Review core algorithms"}]}'
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="Create a revision plan for the AI course.",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "study_plan"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "study_plan"
+    assert result_event.metadata["artifacts"]["plan"][0]["title"] == "Week 1"
+    assert "Week 1" in result_event.metadata["response"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("enabled_tools", "knowledge_bases", "expected_tools", "expected_kb", "expected_disable"),
     [

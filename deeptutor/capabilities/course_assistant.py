@@ -218,7 +218,58 @@ class CourseAssistantCapability(BaseCapability):
         kb_name: str,
         stream: StreamBus,
     ) -> dict[str, Any]:
-        raise RuntimeError("study_plan mode is not implemented yet")
+        await stream.progress(
+            message=f"Retrieving planning context from {kb_name}.",
+            source=self.name,
+            stage="processing",
+        )
+        rag_result = await get_tool_registry().execute(
+            "rag",
+            query=context.user_message or f"Study plan for {config.chapter}",
+            kb_name=kb_name,
+            top_k=config.top_k,
+        )
+        grounded_context = str(rag_result.content or "")
+
+        await stream.progress(
+            message="Generating study plan.",
+            source=self.name,
+            stage="generating",
+        )
+        llm_config = get_llm_config()
+        raw = await sdk_complete(
+            prompt=self._render_prompt(
+                "study_planner.md",
+                user_message=context.user_message,
+                kb_name=kb_name,
+                grounded_context=grounded_context,
+                chapter=config.chapter,
+            ),
+            system_prompt="You are a course assistant.",
+            provider_name=llm_config.binding,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
+            base_url=llm_config.base_url,
+            api_version=llm_config.api_version,
+        )
+        parsed = json.loads(raw)
+        plan = list(parsed.get("plan", []))
+        response = "\n\n".join(
+            f"{item['title']}\nTopics: {', '.join(item['topics'])}\nGoal: {item['goal']}"
+            for item in plan
+        )
+
+        return {
+            "mode": "study_plan",
+            "response": response,
+            "sources": list(rag_result.sources or []) if config.include_sources else [],
+            "artifacts": {"plan": plan},
+            "metadata": {
+                "kb_name": kb_name,
+                "retrieved_count": len((rag_result.metadata or {}).get("sources", [])),
+                "degraded": not bool(grounded_context.strip()),
+            },
+        }
 
     async def _run_summary(
         self,
@@ -227,4 +278,54 @@ class CourseAssistantCapability(BaseCapability):
         kb_name: str,
         stream: StreamBus,
     ) -> dict[str, Any]:
-        raise RuntimeError("summary mode is not implemented yet")
+        query = (
+            context.user_message
+            or " ".join(part for part in [config.chapter, config.section] if part).strip()
+        )
+        await stream.progress(
+            message=f"Retrieving summary context from {kb_name}.",
+            source=self.name,
+            stage="processing",
+        )
+        rag_result = await get_tool_registry().execute(
+            "rag",
+            query=query,
+            kb_name=kb_name,
+            top_k=config.top_k,
+        )
+        grounded_context = str(rag_result.content or "")
+
+        await stream.progress(
+            message="Generating summary.",
+            source=self.name,
+            stage="generating",
+        )
+        llm_config = get_llm_config()
+        summary_text = await sdk_complete(
+            prompt=self._render_prompt(
+                "summarizer.md",
+                user_message=context.user_message,
+                kb_name=kb_name,
+                grounded_context=grounded_context,
+                chapter=config.chapter,
+                section=config.section,
+            ),
+            system_prompt="You are a course assistant.",
+            provider_name=llm_config.binding,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
+            base_url=llm_config.base_url,
+            api_version=llm_config.api_version,
+        )
+
+        return {
+            "mode": "summary",
+            "response": summary_text,
+            "sources": list(rag_result.sources or []) if config.include_sources else [],
+            "artifacts": {"summary": summary_text},
+            "metadata": {
+                "kb_name": kb_name,
+                "retrieved_count": len((rag_result.metadata or {}).get("sources", [])),
+                "degraded": not bool(grounded_context.strip()),
+            },
+        }
