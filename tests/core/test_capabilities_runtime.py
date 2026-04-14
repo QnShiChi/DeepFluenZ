@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from deeptutor.capabilities.chat import ChatCapability
+from deeptutor.capabilities.course_assistant import CourseAssistantCapability
 from deeptutor.capabilities.deep_question import DeepQuestionCapability
 from deeptutor.capabilities.deep_research import DeepResearchCapability
 from deeptutor.capabilities.deep_solve import DeepSolveCapability
@@ -107,6 +108,79 @@ async def test_chat_capability_streams_content_and_geogebra_context(
     assert any(event.type == StreamEventType.SOURCES for event in events)
     assert any(event.type == StreamEventType.CONTENT and "assistant output" in event.content for event in events)
     assert "GGB commands" in captured["process"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_course_assistant_qa_mode_streams_grounded_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            assert name == "rag"
+            assert kwargs["query"] == "What is overfitting?"
+            assert kwargs["kb_name"] == "ai-course"
+            return SimpleNamespace(
+                content="Overfitting is when a model memorizes training data.",
+                metadata={
+                    "answer": "Overfitting is when a model memorizes training data.",
+                    "sources": [{"title": "Lecture 5", "content": "Overfitting happens ..."}],
+                },
+                sources=[{"type": "rag", "kb_name": "ai-course", "query": "What is overfitting?"}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                "Overfitting happens when the model memorizes the training data "
+                "instead of generalizing."
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="What is overfitting?",
+        active_capability="course_assistant",
+        knowledge_bases=["ai-course"],
+        config_overrides={"mode": "qa"},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    assert any(
+        event.type == StreamEventType.PROGRESS and event.stage == "understanding"
+        for event in events
+    )
+    assert any(
+        event.type == StreamEventType.PROGRESS and event.stage == "processing"
+        for event in events
+    )
+    assert any(
+        event.type == StreamEventType.CONTENT
+        and "memorizes the training data" in event.content
+        for event in events
+    )
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["mode"] == "qa"
+    assert result_event.metadata["metadata"]["kb_name"] == "ai-course"
+    assert result_event.metadata["sources"][0]["type"] == "rag"
 
 
 @pytest.mark.asyncio
