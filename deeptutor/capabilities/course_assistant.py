@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,26 @@ class CourseAssistantCapability(BaseCapability):
         template = self._load_prompt_template(name)
         return template.format(**values)
 
+    def _parse_llm_json(self, raw: str) -> dict[str, Any]:
+        text = str(raw or "").strip()
+        if not text:
+            raise ValueError("Model returned an empty response.")
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        fence_match = re.search(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", text, re.DOTALL)
+        if fence_match:
+            return json.loads(fence_match.group(1))
+
+        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+
+        raise ValueError("Model did not return valid JSON.")
+
     async def _run_qa(
         self,
         context: UnifiedContext,
@@ -130,7 +151,7 @@ class CourseAssistantCapability(BaseCapability):
                 kb_name=kb_name,
                 grounded_context=grounded_context,
             ),
-            system_prompt="You are a course assistant.",
+            system_prompt="Bạn là trợ giảng đại học. Trả lời bằng tiếng Việt.",
             provider_name=llm_config.binding,
             model=llm_config.model,
             api_key=llm_config.api_key,
@@ -188,19 +209,34 @@ class CourseAssistantCapability(BaseCapability):
                 difficulty=config.difficulty,
                 question_type=config.question_type,
             ),
-            system_prompt="You are a course assistant.",
+            system_prompt="Bạn là trợ giảng đại học. Tạo câu hỏi bằng tiếng Việt.",
             provider_name=llm_config.binding,
             model=llm_config.model,
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             api_version=llm_config.api_version,
         )
-        parsed = json.loads(raw)
+        parsed = self._parse_llm_json(raw)
         questions = list(parsed.get("questions", []))
-        response = "\n\n".join(
-            f"{idx + 1}. {item['prompt']}\nHint: {item['answer_hint']}"
-            for idx, item in enumerate(questions)
-        )
+        
+        # Format response based on question type
+        if config.question_type == "multiple_choice":
+            # For multiple choice, include options and answer in the response
+            response_parts = []
+            for idx, item in enumerate(questions):
+                # Format: Question with options, then Answer
+                question_text = item['prompt']
+                answer = item.get('answer_hint', 'N/A')
+                response_parts.append(
+                    f"{idx + 1}. {question_text}\nAnswer: {answer}"
+                )
+            response = "\n\n".join(response_parts)
+        else:
+            # For other types, use the original format
+            response = "\n\n".join(
+                f"{idx + 1}. {item['prompt']}\nHint: {item['answer_hint']}"
+                for idx, item in enumerate(questions)
+            )
 
         return {
             "mode": "exam",
@@ -248,14 +284,14 @@ class CourseAssistantCapability(BaseCapability):
                 grounded_context=grounded_context,
                 chapter=config.chapter,
             ),
-            system_prompt="You are a course assistant.",
+            system_prompt="Bạn là trợ giảng đại học. Tạo kế hoạch học tập bằng tiếng Việt.",
             provider_name=llm_config.binding,
             model=llm_config.model,
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             api_version=llm_config.api_version,
         )
-        parsed = json.loads(raw)
+        parsed = self._parse_llm_json(raw)
         plan = list(parsed.get("plan", []))
         response = "\n\n".join(
             f"{item['title']}\nTopics: {', '.join(item['topics'])}\nGoal: {item['goal']}"
@@ -313,7 +349,7 @@ class CourseAssistantCapability(BaseCapability):
                 chapter=config.chapter,
                 section=config.section,
             ),
-            system_prompt="You are a course assistant.",
+            system_prompt="Bạn là trợ giảng đại học. Tóm tắt bằng tiếng Việt.",
             provider_name=llm_config.binding,
             model=llm_config.model,
             api_key=llm_config.api_key,

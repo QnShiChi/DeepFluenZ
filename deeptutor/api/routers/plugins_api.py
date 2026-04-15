@@ -340,6 +340,8 @@ async def _execute_capability_stream(
                     if event.type.value == "result":
                         final_result = dict(event.metadata)
                         continue
+                    if event.type.value == "error" and not error_holder.get("detail"):
+                        error_holder["detail"] = str(event.content or "Capability execution failed.")
                     await log_queue.put(
                         "__STREAM_EVENT__" + json.dumps(event.to_dict(), default=str)
                     )

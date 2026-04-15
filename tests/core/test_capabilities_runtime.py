@@ -294,6 +294,61 @@ async def test_course_assistant_study_plan_mode_returns_plan(
     assert "Week 1" in result_event.metadata["response"]
 
 
+@pytest.mark.asyncio
+async def test_course_assistant_exam_mode_parses_fenced_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeToolRegistry:
+        async def execute(self, name: str, **kwargs: Any):
+            assert name == "rag"
+            return SimpleNamespace(
+                content="Binary trees, graph traversal, dynamic programming.",
+                metadata={"sources": [{"title": "Algorithms"}]},
+                sources=[{"type": "rag", "kb_name": "cs-course", "query": kwargs["query"]}],
+            )
+
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_tool_registry",
+        lambda: FakeToolRegistry(),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.get_llm_config",
+        lambda: SimpleNamespace(
+            binding="openrouter",
+            model="openai/gpt-4o-mini",
+            api_key="k",
+            base_url="https://example.com/v1",
+            api_version=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "deeptutor.capabilities.course_assistant.sdk_complete",
+        lambda **kwargs: asyncio.sleep(
+            0,
+            result=(
+                "Here is the requested exam set.\n"
+                "```json\n"
+                '{"questions":[{"prompt":"Explain BFS","type":"short_answer","answer_hint":"Layer by layer"}]}'
+                "\n```"
+            ),
+        ),
+    )
+
+    context = UnifiedContext(
+        user_message="Generate one algorithms question.",
+        active_capability="course_assistant",
+        knowledge_bases=["cs-course"],
+        config_overrides={"mode": "exam", "num_questions": 1},
+        language="en",
+    )
+
+    capability = CourseAssistantCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["artifacts"]["questions"][0]["prompt"] == "Explain BFS"
+
+
 def test_course_assistant_registered_in_builtin_capabilities() -> None:
     from deeptutor.runtime.bootstrap.builtin_capabilities import BUILTIN_CAPABILITY_CLASSES
 

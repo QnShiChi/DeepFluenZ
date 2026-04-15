@@ -32,6 +32,11 @@ import { extractBase64FromDataUrl, readFileAsDataUrl } from "@/lib/file-attachme
 import { listKnowledgeBases } from "@/lib/knowledge-api";
 import type { StreamEvent } from "@/lib/unified-ws";
 import {
+  buildCourseAssistantRequest,
+  normalizeCourseAssistantConfig,
+  type CourseAssistantFormConfig,
+} from "@/lib/course-assistant-playground";
+import {
   filterFrontendTools,
   FRONTEND_HIDDEN_TOOLS,
   loadCapabilityPlaygroundConfigs,
@@ -1252,6 +1257,821 @@ function DeepResearchTester({
 }
 
 /* ------------------------------------------------------------------ */
+/*  InteractiveExam                                                    */
+/* ------------------------------------------------------------------ */
+
+interface ExamQuestion {
+  number: number;
+  question: string;
+  hint?: string;
+  answer?: string;
+  options?: string[]; // For multiple choice: ["A) Option 1", "B) Option 2", ...]
+  correctOption?: string; // For multiple choice: "A", "B", "C", or "D"
+}
+
+interface GradingResult {
+  questionNumber: number;
+  score: number; // 0-100
+  feedback: string;
+  correct: boolean;
+}
+
+function parseExamQuestions(content: string, questionType?: string): ExamQuestion[] {
+  const questions: ExamQuestion[] = [];
+  
+  // First, replace literal \n with actual newlines
+  const normalizedContent = content.replace(/\\n/g, "\n");
+  
+  // Match patterns like "1. Question text" or "1\. Question text"
+  const questionRegex = /(\d+)\.\s+([\s\S]*?)(?=\n\d+\.\s|\n*$)/g;
+  let match;
+
+  while ((match = questionRegex.exec(normalizedContent)) !== null) {
+    const number = parseInt(match[1], 10);
+    let questionText = match[2].trim();
+
+    // Extract hint if present
+    const hintMatch = questionText.match(/Hint:\s*([^\n]+)/i);
+    const hint = hintMatch ? hintMatch[1].trim() : undefined;
+
+    // Extract answer if present (common patterns)
+    // For multiple choice: "Answer: A" or "Answer: B)" or "Answer: A)"
+    const answerMatch = questionText.match(/(?:Answer|Đáp án):\s*([A-D])[).]?\s*/i);
+    const answer = answerMatch ? answerMatch[1].trim().toUpperCase() : undefined;
+
+    // For multiple choice, detect options like A), B), C), D) or A., B., C., D.
+    let options: string[] | undefined;
+    let correctOption: string | undefined;
+
+    if (questionType === "multiple_choice") {
+      // Try to extract options in various formats:
+      // A) Option text  or  A. Option text  or  A) Option text\nB) Option text
+      const optionRegex = /([A-D])[).]\s+([^\n]+)/gi;
+      const foundOptions: string[] = [];
+      let optionMatch;
+      const tempText = questionText;
+
+      while ((optionMatch = optionRegex.exec(tempText)) !== null) {
+        foundOptions.push(`${optionMatch[1]}) ${optionMatch[2]}`);
+      }
+
+      if (foundOptions.length >= 2) {
+        options = foundOptions;
+
+        // Use the extracted answer letter if available
+        if (answer) {
+          correctOption = answer;
+        }
+
+        // Remove options from question text
+        questionText = questionText
+          .replace(/([A-D])[).]\s+[^\n]+/gi, "")
+          .replace(/Answer:\s*[A-D][).]?\s*/gi, "")
+          .trim();
+      }
+    }
+
+    // Clean question text (remove answer/hint for display)
+    let cleanQuestion = questionText
+      .replace(/(?:Answer|Đáp án):\s*[A-D][).]?\s*/gi, "")
+      .replace(/Hint:\s*[^\n]+/gi, "")
+      .trim();
+
+    questions.push({
+      number,
+      question: cleanQuestion,
+      hint,
+      answer,
+      options,
+      correctOption,
+    });
+  }
+
+  return questions;
+}
+
+function InteractiveExam({ content, questionType }: { content: string; questionType?: string }) {
+  const { t } = useTranslation();
+  const questions = useMemo(() => parseExamQuestions(content, questionType), [content, questionType]);
+  const [revealedAnswers, setRevealedAnswers] = useState<Set<number>>(new Set());
+  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  const [grading, setGrading] = useState(false);
+  const [gradingResults, setGradingResults] = useState<GradingResult[]>([]);
+
+  const toggleAnswer = (questionNumber: number) => {
+    setRevealedAnswers((prev) => {
+      const next = new Set(prev);
+      if (next.has(questionNumber)) {
+        next.delete(questionNumber);
+      } else {
+        next.add(questionNumber);
+      }
+      return next;
+    });
+  };
+
+  const updateUserAnswer = (questionNumber: number, answer: string) => {
+    setUserAnswers((prev) => ({ ...prev, [questionNumber]: answer }));
+  };
+
+  const submitForGrading = async () => {
+    const answeredQuestions = questions.filter((q) => {
+      const answer = userAnswers[q.number];
+      return q.options && q.options.length > 0 
+        ? answer?.trim() // For multiple choice, just needs a selection
+        : answer?.trim(); // For essay, needs text
+    });
+    
+    if (answeredQuestions.length === 0) {
+      alert(t("Please answer at least one question before submitting."));
+      return;
+    }
+
+    setGrading(true);
+    setGradingResults([]);
+
+    try {
+      // Auto-grade multiple choice questions
+      const autoGradedResults: GradingResult[] = [];
+      const essayQuestions: ExamQuestion[] = [];
+
+      for (const q of questions) {
+        const userAnswer = userAnswers[q.number];
+        if (!userAnswer?.trim()) continue;
+
+        // If it's multiple choice with a correct answer, auto-grade
+        if (q.options && q.options.length > 0 && q.correctOption) {
+          const isCorrect = userAnswer.toUpperCase() === q.correctOption.toUpperCase();
+          autoGradedResults.push({
+            questionNumber: q.number,
+            score: isCorrect ? 100 : 0,
+            feedback: isCorrect 
+              ? t("Correct! Well done.") 
+              : t("Incorrect. The correct answer is {{answer}}.", { answer: q.correctOption }),
+            correct: isCorrect,
+          });
+        } else {
+          // Essay questions need AI grading
+          essayQuestions.push(q);
+        }
+      }
+
+      // If there are essay questions, call AI for grading
+      let aiGradedResults: GradingResult[] = [];
+      if (essayQuestions.length > 0) {
+        const gradingPrompt = `Please grade the following exam answers. Return a JSON array with grading results for each question.
+
+Questions:
+${essayQuestions
+  .map(
+    (q) => `
+Question ${q.number}: ${q.question}
+Expected Answer: ${q.answer || "N/A"}
+Student's Answer: ${userAnswers[q.number]}
+`,
+  )
+  .join("\n")}
+
+Return ONLY a JSON array in this format (no markdown, no explanation):
+[
+  {
+    "questionNumber": 1,
+    "score": 85,
+    "feedback": "Good answer but missing some details about...",
+    "correct": true
+  }
+]
+
+Score should be 0-100. Set correct to true if score >= 70.`;
+
+        const res = await fetch(
+          apiUrl("/api/v1/chat/completions"),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [{ role: "user", content: gradingPrompt }],
+              max_tokens: 2000,
+            }),
+          },
+        );
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        const responseContent = data.choices?.[0]?.message?.content || "[]";
+
+        // Parse JSON response
+        try {
+          const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            aiGradedResults = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error("No JSON array found in response");
+          }
+        } catch (parseError) {
+          console.error("Failed to parse grading response:", parseError);
+          aiGradedResults = essayQuestions.map((q) => ({
+            questionNumber: q.number,
+            score: 0,
+            feedback: t("Failed to grade this answer automatically."),
+            correct: false,
+          }));
+        }
+      }
+
+      // Combine auto-graded and AI-graded results
+      setGradingResults([...autoGradedResults, ...aiGradedResults]);
+    } catch (err) {
+      console.error("Grading error:", err);
+      alert(t("Failed to grade answers. Please try again."));
+    } finally {
+      setGrading(false);
+    }
+  };
+
+  const totalScore = useMemo(() => {
+    if (gradingResults.length === 0) return null;
+    const sum = gradingResults.reduce((acc, r) => acc + r.score, 0);
+    return Math.round(sum / gradingResults.length);
+  }, [gradingResults]);
+
+  if (questions.length === 0) {
+    // Fallback to plain markdown if parsing fails
+    return (
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
+        <MarkdownRenderer content={content} variant="prose" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-[var(--foreground)]">
+            {t("Exam Questions")} ({questions.length} {t("questions")})
+          </h3>
+          <button
+            onClick={submitForGrading}
+            disabled={grading || Object.values(userAnswers).every((a) => !a.trim())}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-4 py-2 text-[13px] font-medium text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[var(--primary)]/90"
+          >
+            {grading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                {t("Grading...")}
+              </>
+            ) : (
+              <>
+                <Check size={14} />
+                {t("Submit & Grade")}
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Grading Results Summary */}
+        {gradingResults.length > 0 && totalScore !== null && (
+          <div className="mb-4 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-[14px] font-semibold text-[var(--foreground)]">
+                {t("Grading Results")}
+              </h4>
+              <div className="flex items-center gap-2">
+                <span className="text-[24px] font-bold text-[var(--primary)]">
+                  {totalScore}%
+                </span>
+                <span className="text-[12px] text-[var(--muted-foreground)]">
+                  ({gradingResults.filter((r) => r.correct).length}/{gradingResults.length} {t("correct")})
+                </span>
+              </div>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--muted)]">
+              <div
+                className="h-full bg-[var(--primary)] transition-all duration-500"
+                style={{ width: `${totalScore}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {questions.map((q) => {
+            const result = gradingResults.find((r) => r.questionNumber === q.number);
+            return (
+              <div
+                key={q.number}
+                className={`rounded-lg border p-4 ${
+                  result
+                    ? result.correct
+                      ? "border-green-300 bg-green-50 dark:border-green-900 dark:bg-green-950/20"
+                      : "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/20"
+                    : "border-[var(--border)] bg-[var(--card)]"
+                }`}
+              >
+                <div className="mb-2 flex items-start gap-2">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
+                      result
+                        ? result.correct
+                          ? "bg-green-500 text-white"
+                          : "bg-red-500 text-white"
+                        : "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                    }`}
+                  >
+                    {q.number}
+                  </span>
+                  <p className="text-[14px] leading-relaxed text-[var(--foreground)]">
+                    {q.question}
+                  </p>
+                </div>
+
+                {q.hint && (
+                  <details className="ml-8 mt-2">
+                    <summary className="cursor-pointer text-[12px] text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+                      {t("Hint")}
+                    </summary>
+                    <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">{q.hint}</p>
+                  </details>
+                )}
+
+                {/* User answer input area - Multiple Choice or Essay */}
+                <div className="ml-8 mt-3">
+                  {q.options && q.options.length > 0 ? (
+                    // Multiple choice rendering
+                    <div className="space-y-2">
+                      {q.options.map((option, idx) => {
+                        const optionLetter = option.charAt(0); // "A", "B", "C", or "D"
+                        const optionText = option.slice(2); // Rest of the option text
+                        const isSelected = userAnswers[q.number] === optionLetter;
+
+                        return (
+                          <label
+                            key={idx}
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                              isSelected
+                                ? "border-[var(--primary)] bg-[var(--primary)]/5"
+                                : "border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)]"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`question-${q.number}`}
+                              value={optionLetter}
+                              checked={isSelected}
+                              onChange={() => updateUserAnswer(q.number, optionLetter)}
+                              className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+                            />
+                            <span className="text-[13px] text-[var(--foreground)]">
+                              <strong>{optionLetter})</strong> {optionText}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    // Essay/short answer rendering
+                    <textarea
+                      value={userAnswers[q.number] || ""}
+                      onChange={(e) => updateUserAnswer(q.number, e.target.value)}
+                      placeholder={t("Type your answer here...")}
+                      className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40 placeholder:text-[var(--muted-foreground)]"
+                      rows={3}
+                    />
+                  )}
+                </div>
+
+                {/* Grading feedback */}
+                {result && (
+                  <div className="ml-8 mt-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-[12px] font-medium text-[var(--foreground)]">
+                        {t("Score")}: {result.score}/100
+                      </span>
+                      {result.correct ? (
+                        <Check size={14} className="text-green-600" />
+                      ) : (
+                        <X size={14} className="text-red-600" />
+                      )}
+                    </div>
+                    <p className="text-[13px] text-[var(--muted-foreground)]">{result.feedback}</p>
+                  </div>
+                )}
+
+                {/* Reveal answer button */}
+                {q.answer && (
+                  <div className="ml-8 mt-2">
+                    <button
+                      onClick={() => toggleAnswer(q.number)}
+                      className="rounded-lg bg-[var(--primary)]/10 px-3 py-1.5 text-[12px] font-medium text-[var(--primary)] hover:bg-[var(--primary)]/20"
+                    >
+                      {revealedAnswers.has(q.number)
+                        ? t("Hide Answer")
+                        : t("Show Answer")}
+                    </button>
+
+                    {revealedAnswers.has(q.number) && (
+                      <div className="mt-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[13px] text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
+                        <strong>{t("Answer")}:</strong> {q.answer}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  CourseAssistantTester                                              */
+/* ------------------------------------------------------------------ */
+
+function CourseAssistantTester({
+  capability,
+  enabledTools,
+  knowledgeBase,
+  config,
+  onConfigChange,
+}: {
+  capability: CapabilityInfo;
+  enabledTools: string[];
+  knowledgeBase: string;
+  config: CourseAssistantFormConfig;
+  onConfigChange: (next: CourseAssistantFormConfig) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<TesterMessage[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  const updateConfig = <K extends keyof CourseAssistantFormConfig>(
+    key: K,
+    value: CourseAssistantFormConfig[K],
+  ) => {
+    onConfigChange({ ...config, [key]: value });
+  };
+
+  const updateLastAssistant = (updater: (msg: TesterMessage) => TesterMessage) => {
+    setMessages((prev) => {
+      const msgs = [...prev];
+      const last = msgs[msgs.length - 1];
+      if (last?.role !== "assistant") return prev;
+      msgs[msgs.length - 1] = updater(last);
+      return msgs;
+    });
+  };
+
+  const request = useMemo(
+    () => buildCourseAssistantRequest(input, config),
+    [config, input],
+  );
+  const canRun =
+    request.content.trim().length > 0 &&
+    (!enabledTools.includes("rag") || Boolean(knowledgeBase));
+
+  const run = async () => {
+    if (!canRun || streaming) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const userContent = input.trim() || request.content;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: userContent },
+      { role: "assistant", content: "", events: [], processLogs: [], result: null, error: null },
+    ]);
+    setStreaming(true);
+
+    try {
+      const res = await fetch(
+        apiUrl(`/api/v1/plugins/capabilities/${capability.name}/execute-stream`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: request.content,
+            tools: enabledTools,
+            knowledge_bases: enabledTools.includes("rag") && knowledgeBase ? [knowledgeBase] : [],
+            language: i18n.language,
+            config: request.config,
+          }),
+          signal: controller.signal,
+        },
+      );
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || `HTTP ${res.status}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const eventMatch = part.match(/^event:\s*(.+)$/m);
+          const dataMatch = part.match(/^data:\s*(.+)$/m);
+          if (!eventMatch || !dataMatch) continue;
+
+          const eventType = eventMatch[1].trim();
+          let payload: Record<string, unknown>;
+          try {
+            payload = JSON.parse(dataMatch[1]);
+          } catch {
+            continue;
+          }
+
+          if (eventType === "log") {
+            const line = (payload.line as string) ?? "";
+            updateLastAssistant((last) => ({
+              ...last,
+              processLogs: [...(last.processLogs || []), line],
+            }));
+            continue;
+          }
+
+          if (eventType === "stream") {
+            const event = payload as unknown as StreamEvent;
+            if (event.type === "session" || event.type === "done") continue;
+            updateLastAssistant((last) => ({
+              ...last,
+              content: event.type === "content" ? `${last.content}${event.content}` : last.content,
+              events: [...(last.events || []), event],
+            }));
+            continue;
+          }
+
+          if (eventType === "result") {
+            updateLastAssistant((last) => ({
+              ...last,
+              result: {
+                success: Boolean(payload.success),
+                data: ((payload.data as Record<string, unknown>) ?? {}),
+                elapsedMs: typeof payload.elapsed_ms === "number" ? payload.elapsed_ms : undefined,
+              },
+            }));
+            continue;
+          }
+
+          if (eventType === "error") {
+            updateLastAssistant((last) => ({
+              ...last,
+              error: (payload.detail as string) ?? "Unknown error",
+            }));
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (controller.signal.aborted) return;
+      updateLastAssistant((last) => ({
+        ...last,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      if (!controller.signal.aborted) setStreaming(false);
+    }
+  };
+
+  const promptPlaceholder =
+    config.mode === "qa"
+      ? t("Ask a course question...")
+      : config.mode === "exam"
+        ? t("Optional: describe the kind of exam you want...")
+        : config.mode === "study_plan"
+          ? t("Optional: describe your review goal...")
+          : t("Optional: add instructions for the summary...");
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {(["qa", "exam", "study_plan", "summary"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => updateConfig("mode", mode)}
+              className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                config.mode === mode
+                  ? "bg-[var(--primary)]/10 text-[var(--primary)]"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {t(titleCase(mode))}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+              {t("Top K")}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={config.top_k}
+              onChange={(e) => updateConfig("top_k", Math.max(1, Number(e.target.value) || 1))}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+              {t("Output")}
+            </label>
+            <select
+              value={config.output_format}
+              onChange={(e) => updateConfig("output_format", e.target.value === "json" ? "json" : "markdown")}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
+            >
+              <option value="markdown">{t("Markdown")}</option>
+              <option value="json">{t("JSON")}</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+              {t("Chapter")}
+            </label>
+            <input
+              type="text"
+              value={config.chapter}
+              onChange={(e) => updateConfig("chapter", e.target.value)}
+              placeholder={t("e.g. Neural Networks")}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40 placeholder:text-[var(--muted-foreground)]"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+              {t("Section")}
+            </label>
+            <input
+              type="text"
+              value={config.section}
+              onChange={(e) => updateConfig("section", e.target.value)}
+              placeholder={t("e.g. Backpropagation")}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40 placeholder:text-[var(--muted-foreground)]"
+            />
+          </div>
+        </div>
+
+        {config.mode === "exam" && (
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+                {t("Count")}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={config.num_questions}
+                onChange={(e) => updateConfig("num_questions", Math.max(1, Number(e.target.value) || 1))}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+                {t("Difficulty")}
+              </label>
+              <select
+                value={config.difficulty}
+                onChange={(e) => updateConfig("difficulty", e.target.value)}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
+              >
+                <option value="">{t("Auto")}</option>
+                <option value="easy">{t("Easy")}</option>
+                <option value="medium">{t("Medium")}</option>
+                <option value="hard">{t("Hard")}</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
+                {t("Type")}
+              </label>
+              <select
+                value={config.question_type}
+                onChange={(e) => updateConfig("question_type", e.target.value)}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
+              >
+                <option value="">{t("Auto")}</option>
+                <option value="multiple_choice">{t("Multiple Choice")}</option>
+                <option value="short_answer">{t("Short Answer")}</option>
+                <option value="essay">{t("Essay")}</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        <label className="mt-3 inline-flex items-center gap-2 text-[12px] text-[var(--foreground)]">
+          <input
+            type="checkbox"
+            checked={config.include_sources}
+            onChange={(e) => updateConfig("include_sources", e.target.checked)}
+            className="h-4 w-4 rounded border-[var(--border)]"
+          />
+          {t("Include sources in result")}
+        </label>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); } }}
+          rows={3}
+          placeholder={promptPlaceholder}
+          className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+        />
+        {!input.trim() && request.content ? (
+          <div className="mt-2 rounded-lg bg-[var(--muted)] px-3 py-2 text-[11px] text-[var(--muted-foreground)]">
+            {t("Fallback request")}: {request.content}
+          </div>
+        ) : null}
+        {enabledTools.includes("rag") && !knowledgeBase ? (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+            {t("Select a knowledge base before running this capability.")}
+          </div>
+        ) : null}
+        <div className="mt-2 flex justify-end">
+          <button
+            onClick={run}
+            disabled={!canRun || streaming}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {streaming ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            {streaming ? t("Running...") : t("Run Course Assistant")}
+          </button>
+        </div>
+      </div>
+
+      {messages.map((msg, i) => (
+        <div key={`${msg.role}-${i}`}>
+          <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+            {msg.role === "user" ? t("You") : t("Assistant")}
+          </div>
+          {msg.role === "user" ? (
+            <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-[13px] text-[var(--foreground)]">{msg.content}</div>
+          ) : (
+            <div className="space-y-2">
+              <TracePanel events={msg.events || []} />
+              <ProcessLogs
+                logs={msg.processLogs || []}
+                executing={streaming && i === messages.length - 1}
+                title={t("Process")}
+              />
+              {msg.error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                  {msg.error}
+                </div>
+              )}
+              {/* Only show streamed content if there's no result response, to avoid duplicates */}
+              {!msg.result?.data.response && (
+                <AssistantResponse
+                  content={msg.content}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5"
+                />
+              )}
+              {msg.result?.data.response && typeof msg.result.data.response === "string" && config.mode === "exam" ? (
+                <InteractiveExam 
+                  content={msg.result.data.response} 
+                  questionType={config.question_type || undefined}
+                />
+              ) : (
+                <CapabilityResultPanel result={msg.result} />
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  CapabilityTester                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1528,6 +2348,13 @@ export default function PlaygroundPage() {
       ),
     [activeCapabilityConfig?.config],
   );
+  const activeCourseAssistantConfig = useMemo(
+    () =>
+      normalizeCourseAssistantConfig(
+        activeCapabilityConfig?.config as Record<string, unknown> | undefined,
+      ),
+    [activeCapabilityConfig?.config],
+  );
   const listItems = useMemo(
     () =>
       activeKind === "tool"
@@ -1591,8 +2418,17 @@ export default function PlaygroundPage() {
     });
   };
 
+  const setCourseAssistantConfig = (next: CourseAssistantFormConfig) => {
+    if (!activeCapability || !activeCapabilityConfig) return;
+    persistCapabilityConfig(activeCapability.name, {
+      enabledTools: activeCapabilityConfig.enabledTools,
+      knowledgeBase: activeCapabilityConfig.knowledgeBase,
+      config: next as unknown as Record<string, unknown>,
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="h-full overflow-y-auto bg-[var(--background)] [scrollbar-gutter:stable]">
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)]">{t("Playground")}</h1>
@@ -1771,6 +2607,15 @@ export default function PlaygroundPage() {
                             knowledgeBase={activeCapabilityConfig?.knowledgeBase ?? ""}
                             config={activeDeepResearchConfig}
                             onConfigChange={setDeepResearchConfig}
+                          />
+                        ) : activeCapability.name === "course_assistant" ? (
+                          <CourseAssistantTester
+                            key={activeCapability.name}
+                            capability={activeCapability}
+                            enabledTools={activeCapabilityConfig?.enabledTools ?? activeCapability.tools_used ?? []}
+                            knowledgeBase={activeCapabilityConfig?.knowledgeBase ?? ""}
+                            config={activeCourseAssistantConfig}
+                            onConfigChange={setCourseAssistantConfig}
                           />
                         ) : (
                           <CapabilityTester
