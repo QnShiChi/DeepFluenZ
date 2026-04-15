@@ -1351,6 +1351,73 @@ class SQLiteSessionStore:
         return await self._run(self._get_entry_categories_sync, entry_id)
 
 
+    # ── Knowledge Graph ──────────────────────────────────────────────
+
+    def _upsert_course_template_sync(self, subject_id: str, template_json: str) -> bool:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO course_graph_templates (subject_id, template_json, created_at, updated_at)
+                VALUES (?, ?, COALESCE((SELECT created_at FROM course_graph_templates WHERE subject_id = ?), ?), ?)
+                """,
+                (subject_id, template_json, subject_id, now, now)
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def upsert_course_template(self, subject_id: str, template_json: str) -> bool:
+        return await self._run(self._upsert_course_template_sync, subject_id, template_json)
+
+    def _get_course_template_sync(self, subject_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM course_graph_templates WHERE subject_id = ?", (subject_id,)).fetchone()
+        return dict(row) if row else None
+
+    async def get_course_template(self, subject_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_course_template_sync, subject_id)
+
+    def _upsert_student_state_sync(self, session_id: str, subject_id: str, state_dict: dict[str, Any]) -> bool:
+        now = time.time()
+        current_node_id = state_dict.get("current_node_id", "")
+        mastered_nodes_json = _json_dumps(state_dict.get("mastered_nodes", []))
+        dynamic_nodes_json = _json_dumps(state_dict.get("dynamic_nodes", []))
+        
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO student_graph_states (
+                    session_id, subject_id, current_node_id, 
+                    mastered_nodes_json, dynamic_nodes_json, 
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
+                """,
+                (session_id, subject_id, current_node_id, mastered_nodes_json, dynamic_nodes_json, session_id, subject_id, now, now)
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def upsert_student_state(self, session_id: str, subject_id: str, state_dict: dict[str, Any]) -> bool:
+        return await self._run(self._upsert_student_state_sync, session_id, subject_id, state_dict)
+
+    def _get_student_state_sync(self, session_id: str, subject_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM student_graph_states WHERE session_id = ? AND subject_id = ?", 
+                (session_id, subject_id)
+            ).fetchone()
+        if not row:
+            return None
+        payload = dict(row)
+        payload["mastered_nodes"] = _json_loads(payload.pop("mastered_nodes_json", ""), [])
+        payload["dynamic_nodes"] = _json_loads(payload.pop("dynamic_nodes_json", ""), [])
+        return payload
+
+    async def get_student_state(self, session_id: str, subject_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_student_state_sync, session_id, subject_id)
+
+
 _instance: SQLiteSessionStore | None = None
 
 
