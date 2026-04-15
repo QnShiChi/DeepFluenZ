@@ -8,8 +8,12 @@ from deeptutor.services.exam.models import ExamArtifact, ExamQuestion
 def _map_kind(question_type: str) -> str:
     mapping = {
         "choice": "multiple_choice",
+        "multiple_choice": "multiple_choice",
+        "true_false": "true_false",
+        "matching": "matching",
         "written": "short_answer",
         "coding": "short_answer",
+        "short_answer": "short_answer",
     }
     return mapping.get(question_type or "", "short_answer")
 

@@ -14,6 +14,7 @@ from deeptutor.capabilities.request_contracts import (
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
 from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
+from deeptutor.services.exam.normalizer import normalize_legacy_exam_artifact
 from deeptutor.services.llm.config import get_llm_config
 from deeptutor.services.llm.executors import sdk_complete
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
@@ -201,16 +202,40 @@ class CourseAssistantCapability(BaseCapability):
             f"{idx + 1}. {item['prompt']}\nHint: {item['answer_hint']}"
             for idx, item in enumerate(questions)
         )
+        legacy_questions = [
+            {
+                "question_id": f"q{idx + 1}",
+                "question": item.get("prompt", ""),
+                "question_type": item.get("type", "written"),
+                "options": item.get("options") or {},
+                "correct_answer": item.get("answer_hint", ""),
+                "explanation": item.get("explanation", ""),
+                "difficulty": config.difficulty or "",
+                "concentration": item.get("concentration", ""),
+            }
+            for idx, item in enumerate(questions)
+        ]
+        typed_artifact = normalize_legacy_exam_artifact(
+            session_id=context.session_id or "",
+            knowledge_base=kb_name,
+            mode="timed",
+            title="Course Assistant Exam",
+            questions=legacy_questions,
+        )
 
         return {
             "mode": "exam",
             "response": response,
             "sources": list(rag_result.sources or []) if config.include_sources else [],
-            "artifacts": {"questions": questions},
+            "artifacts": {
+                "questions": questions,
+                "exam_artifact": typed_artifact.model_dump(),
+            },
             "metadata": {
                 "kb_name": kb_name,
                 "retrieved_count": len((rag_result.metadata or {}).get("sources", [])),
                 "degraded": not bool(grounded_context.strip()),
+                "exam_id": typed_artifact.exam_id,
             },
         }
 
