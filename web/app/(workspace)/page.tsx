@@ -21,6 +21,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { SelectedRecord } from "@/app/(workspace)/guide/types";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
+import KnowledgeGraphViewer from "@/components/graph/KnowledgeGraphViewer";
 import ChatComposer from "@/components/chat/home/ChatComposer";
 import { ChatMessageList } from "@/components/chat/home/ChatMessages";
 import { apiUrl } from "@/lib/api";
@@ -713,8 +714,15 @@ export default function HomePage() {
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--background)]">
-      <div className="mx-auto flex w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
+    <div className="flex h-full flex-row overflow-hidden bg-[var(--background)]">
+      {/* Left Pane: Knowledge Graph */}
+      <div className="hidden lg:block w-[40%] shrink-0 border-r border-[var(--border)] relative bg-[var(--background)] z-10">
+        <KnowledgeGraphViewer />
+      </div>
+
+      {/* Right Pane: Action Area */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden relative">
+        <div className="mx-auto flex w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
 
         {/* ===== Welcome / Messages ===== */}
         {!hasMessages ? (
@@ -869,6 +877,7 @@ export default function HomePage() {
           onChangeResearchConfig={setResearchConfig}
           onToggleResearchCollapsed={() => setResearchPanelCollapsed((prev) => !prev)}
         />
+      </div>
       </div>
       <NotebookRecordPicker
         open={showNotebookPicker}
