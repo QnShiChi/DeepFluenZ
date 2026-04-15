@@ -213,6 +213,24 @@ class SQLiteSessionStore:
 
                 CREATE INDEX IF NOT EXISTS idx_exam_attempts_session
                     ON exam_attempts(session_id, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS course_graph_templates (
+                    subject_id TEXT PRIMARY KEY,
+                    template_json TEXT DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS student_graph_states (
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    subject_id TEXT NOT NULL REFERENCES course_graph_templates(subject_id) ON DELETE CASCADE,
+                    current_node_id TEXT DEFAULT '',
+                    mastered_nodes_json TEXT DEFAULT '[]',
+                    dynamic_nodes_json TEXT DEFAULT '[]',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (session_id, subject_id)
+                );
                 """
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
