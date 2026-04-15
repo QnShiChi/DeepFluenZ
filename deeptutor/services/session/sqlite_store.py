@@ -942,6 +942,81 @@ class SQLiteSessionStore:
     async def get_exam_attempt(self, attempt_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_exam_attempt_sync, attempt_id)
 
+    def _update_exam_attempt_answers_sync(
+        self,
+        attempt_id: str,
+        answers: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE exam_attempts
+                SET answers_json = ?, updated_at = ?
+                WHERE attempt_id = ?
+                """,
+                (_json_dumps(answers or []), now, attempt_id),
+            )
+            conn.commit()
+            if cur.rowcount <= 0:
+                return None
+        return self._get_exam_attempt_sync(attempt_id)
+
+    async def update_exam_attempt_answers(
+        self,
+        attempt_id: str,
+        answers: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        return await self._run(self._update_exam_attempt_answers_sync, attempt_id, answers)
+
+    def _finalize_exam_attempt_sync(
+        self,
+        attempt_id: str,
+        score_report: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE exam_attempts
+                SET status = 'graded',
+                    score_report_json = ?,
+                    submitted_at = COALESCE(submitted_at, ?),
+                    updated_at = ?
+                WHERE attempt_id = ?
+                """,
+                (_json_dumps(score_report), now, now, attempt_id),
+            )
+            conn.commit()
+            if cur.rowcount <= 0:
+                return None
+        return self._get_exam_attempt_sync(attempt_id)
+
+    async def finalize_exam_attempt(
+        self,
+        attempt_id: str,
+        score_report: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        return await self._run(self._finalize_exam_attempt_sync, attempt_id, score_report)
+
+    def _list_exam_attempts_for_session_sync(self, session_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    attempt_id, exam_id, session_id, status, answers_json, score_report_json,
+                    study_plan_link_json, started_at, submitted_at, duration_seconds, updated_at
+                FROM exam_attempts
+                WHERE session_id = ?
+                ORDER BY updated_at DESC
+                """,
+                (session_id,),
+            ).fetchall()
+        return [self._serialize_exam_attempt(row) for row in rows]
+
+    async def list_exam_attempts_for_session(self, session_id: str) -> list[dict[str, Any]]:
+        return await self._run(self._list_exam_attempts_for_session_sync, session_id)
+
     # ── Notebook entries ──────────────────────────────────────────────
 
     def _upsert_notebook_entries_sync(
