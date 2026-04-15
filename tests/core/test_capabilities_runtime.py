@@ -237,6 +237,11 @@ async def test_course_assistant_exam_mode_returns_questions(
     assert result_event.metadata["mode"] == "exam"
     assert len(result_event.metadata["artifacts"]["questions"]) == 3
     assert result_event.metadata["artifacts"]["questions"][0]["answer_hint"] == "A1"
+    typed_artifact = result_event.metadata["artifacts"]["exam_artifact"]
+    assert typed_artifact["mode"] == "timed"
+    assert typed_artifact["questions"][1]["kind"] == "multiple_choice"
+    assert "student_view" in typed_artifact["questions"][0]
+    assert "grader_key" in typed_artifact["questions"][0]
 
 
 @pytest.mark.asyncio

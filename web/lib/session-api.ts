@@ -82,6 +82,24 @@ export interface QuizResultItem {
   is_correct: boolean;
 }
 
+export interface SessionExamAttemptSummary {
+  attempt_id: string;
+  exam_id: string;
+  session_id: string;
+  status: "in_progress" | "submitted" | "grading" | "graded";
+  answers: Array<{
+    question_id: string;
+    response: Record<string, unknown>;
+    answered_at?: number;
+  }>;
+  score_report: Record<string, unknown> | null;
+  study_plan_link?: Record<string, unknown> | null;
+  started_at?: number;
+  submitted_at?: number | null;
+  duration_seconds?: number;
+  updated_at?: number;
+}
+
 async function expectJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -146,4 +164,14 @@ export async function recordQuizResults(
     body: JSON.stringify({ answers }),
   });
   await expectJson<{ recorded: boolean }>(response);
+}
+
+export async function listSessionExamAttempts(
+  sessionId: string,
+): Promise<SessionExamAttemptSummary[]> {
+  const response = await fetch(apiUrl(`/api/v1/sessions/${sessionId}/exam-attempts`), {
+    cache: "no-store",
+  });
+  const data = await expectJson<{ attempts: SessionExamAttemptSummary[] }>(response);
+  return data.attempts ?? [];
 }

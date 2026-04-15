@@ -74,6 +74,36 @@ def _make_items(*specs):
     return items
 
 
+def test_create_and_fetch_exam_attempt(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Exam Session"))
+    artifact = asyncio.run(
+        store.create_exam_artifact(
+            {
+                "exam_id": "exam_1",
+                "title": "Midterm",
+                "mode": "timed",
+                "source_session_id": session["id"],
+                "knowledge_base": "kb",
+                "total_points": 2,
+                "questions": [],
+            }
+        )
+    )
+
+    attempt = asyncio.run(
+        store.create_exam_attempt(
+            artifact["exam_id"],
+            session["id"],
+            {"status": "in_progress", "answers": [], "score_report": None},
+        )
+    )
+
+    loaded = asyncio.run(store.get_exam_attempt(attempt["attempt_id"]))
+    assert loaded is not None
+    assert loaded["exam_id"] == artifact["exam_id"]
+    assert loaded["status"] == "in_progress"
+
+
 # ── Notebook entries ──────────────────────────────────────────────
 
 def test_upsert_notebook_entries_persists_all(store: SQLiteSessionStore) -> None:
