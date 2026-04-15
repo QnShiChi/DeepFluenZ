@@ -182,6 +182,37 @@ class SQLiteSessionStore:
                     category_id INTEGER NOT NULL REFERENCES notebook_categories(id) ON DELETE CASCADE,
                     PRIMARY KEY (entry_id, category_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS exam_artifacts (
+                    exam_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    knowledge_base TEXT DEFAULT '',
+                    total_points INTEGER NOT NULL DEFAULT 0,
+                    payload_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_exam_artifacts_session
+                    ON exam_artifacts(session_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS exam_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    exam_id TEXT NOT NULL REFERENCES exam_artifacts(exam_id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'in_progress',
+                    answers_json TEXT DEFAULT '[]',
+                    score_report_json TEXT DEFAULT '',
+                    study_plan_link_json TEXT DEFAULT '',
+                    started_at REAL NOT NULL,
+                    submitted_at REAL,
+                    duration_seconds INTEGER NOT NULL DEFAULT 0,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_exam_attempts_session
+                    ON exam_attempts(session_id, updated_at DESC);
                 """
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -767,6 +798,149 @@ class SQLiteSessionStore:
         session["messages"] = await self.get_messages(session_id)
         session["active_turns"] = await self.list_active_turns(session_id)
         return session
+
+    # ── Exam artifacts and attempts ──────────────────────────────────
+
+    def _create_exam_artifact_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
+        exam_id = str(payload.get("exam_id") or "").strip()
+        session_id = str(payload.get("source_session_id") or "").strip()
+        if not exam_id or not session_id:
+            raise ValueError("Exam artifact requires exam_id and source_session_id")
+        now = time.time()
+        with self._connect() as conn:
+            if conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+                raise ValueError(f"Session not found: {session_id}")
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO exam_artifacts (
+                    exam_id, session_id, title, mode, knowledge_base, total_points, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    exam_id,
+                    session_id,
+                    str(payload.get("title") or "Exam"),
+                    str(payload.get("mode") or "timed"),
+                    str(payload.get("knowledge_base") or ""),
+                    int(payload.get("total_points") or 0),
+                    _json_dumps(payload),
+                    now,
+                ),
+            )
+            conn.commit()
+        return payload
+
+    async def create_exam_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._run(self._create_exam_artifact_sync, payload)
+
+    def _get_exam_artifact_sync(self, exam_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM exam_artifacts WHERE exam_id = ?",
+                (exam_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _json_loads(row["payload_json"], None)
+
+    async def get_exam_artifact(self, exam_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_exam_artifact_sync, exam_id)
+
+    def _create_exam_attempt_sync(
+        self,
+        exam_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        now = time.time()
+        attempt_id = str(payload.get("attempt_id") or f"attempt_{uuid.uuid4().hex}")
+        record = {
+            "attempt_id": attempt_id,
+            "exam_id": exam_id,
+            "session_id": session_id,
+            "status": str(payload.get("status") or "in_progress"),
+            "answers": payload.get("answers") or [],
+            "score_report": payload.get("score_report"),
+            "study_plan_link": payload.get("study_plan_link"),
+            "started_at": float(payload.get("started_at") or now),
+            "submitted_at": payload.get("submitted_at"),
+            "duration_seconds": int(payload.get("duration_seconds") or 0),
+            "updated_at": now,
+        }
+        with self._connect() as conn:
+            if conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+                raise ValueError(f"Session not found: {session_id}")
+            if conn.execute(
+                "SELECT exam_id FROM exam_artifacts WHERE exam_id = ?",
+                (exam_id,),
+            ).fetchone() is None:
+                raise ValueError(f"Exam artifact not found: {exam_id}")
+            conn.execute(
+                """
+                INSERT INTO exam_attempts (
+                    attempt_id, exam_id, session_id, status, answers_json, score_report_json,
+                    study_plan_link_json, started_at, submitted_at, duration_seconds, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record["attempt_id"],
+                    record["exam_id"],
+                    record["session_id"],
+                    record["status"],
+                    _json_dumps(record["answers"]),
+                    _json_dumps(record["score_report"]) if record["score_report"] is not None else "",
+                    _json_dumps(record["study_plan_link"]) if record["study_plan_link"] is not None else "",
+                    record["started_at"],
+                    record["submitted_at"],
+                    record["duration_seconds"],
+                    record["updated_at"],
+                ),
+            )
+            conn.commit()
+        return record
+
+    async def create_exam_attempt(
+        self,
+        exam_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await self._run(self._create_exam_attempt_sync, exam_id, session_id, payload)
+
+    @staticmethod
+    def _serialize_exam_attempt(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "attempt_id": row["attempt_id"],
+            "exam_id": row["exam_id"],
+            "session_id": row["session_id"],
+            "status": row["status"] or "in_progress",
+            "answers": _json_loads(row["answers_json"], []),
+            "score_report": _json_loads(row["score_report_json"], None),
+            "study_plan_link": _json_loads(row["study_plan_link_json"], None),
+            "started_at": float(row["started_at"]),
+            "submitted_at": float(row["submitted_at"]) if row["submitted_at"] is not None else None,
+            "duration_seconds": int(row["duration_seconds"] or 0),
+            "updated_at": float(row["updated_at"]),
+        }
+
+    def _get_exam_attempt_sync(self, attempt_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    attempt_id, exam_id, session_id, status, answers_json, score_report_json,
+                    study_plan_link_json, started_at, submitted_at, duration_seconds, updated_at
+                FROM exam_attempts
+                WHERE attempt_id = ?
+                """,
+                (attempt_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._serialize_exam_attempt(row)
+
+    async def get_exam_attempt(self, attempt_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_exam_attempt_sync, attempt_id)
 
     # ── Notebook entries ──────────────────────────────────────────────
 
