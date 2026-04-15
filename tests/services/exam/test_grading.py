@@ -70,3 +70,24 @@ def test_grade_attempt_short_answer_returns_concept_feedback() -> None:
     assert "derivative" in result["matched_concepts"]
     assert "continuity" in result["matched_concepts"]
     assert result["confidence"] >= 0.9
+
+
+def test_grade_attempt_builds_competency_breakdown_for_wrong_answers() -> None:
+    artifact = {
+        "questions": [
+            {
+                "question_id": "q1",
+                "kind": "multiple_choice",
+                "points": 2,
+                "chapter": "Limits",
+                "section": "One-sided limits",
+                "competency_tags": ["conceptual-understanding"],
+                "grader_key": {"correct_choice_ids": ["B"], "explanation": "Paris is correct."},
+            }
+        ]
+    }
+    attempt = {"answers": [{"question_id": "q1", "response": {"choice_ids": ["A"]}}]}
+
+    report = grade_attempt(artifact, attempt)
+    assert report["competency_breakdown"][0]["competency_tag"] == "conceptual-understanding"
+    assert report["recommended_review"][0]["chapter"] == "Limits"

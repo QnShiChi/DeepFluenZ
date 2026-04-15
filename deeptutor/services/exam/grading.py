@@ -13,6 +13,8 @@ def grade_attempt(artifact: dict, attempt: dict) -> dict:
     question_results = []
     total_score = 0
     max_score = 0
+    competency_breakdown = []
+    recommended_review = []
 
     for question in artifact.get("questions", []):
         max_points = int(question.get("points", 0))
@@ -48,6 +50,31 @@ def grade_attempt(artifact: dict, attempt: dict) -> dict:
             confidence = 0.6 if missing_concepts else 0.9
 
         total_score += awarded
+        tags = question.get("competency_tags") or [""]
+        for tag in tags:
+            if not tag:
+                continue
+            competency_breakdown.append(
+                {
+                    "competency_tag": tag,
+                    "chapter": question.get("chapter", ""),
+                    "section": question.get("section", ""),
+                    "awarded_points": awarded,
+                    "max_points": max_points,
+                    "accuracy": (awarded / max_points) if max_points else 0,
+                    "priority": "high" if awarded < max_points else "low",
+                }
+            )
+            if awarded < max_points:
+                recommended_review.append(
+                    {
+                        "chapter": question.get("chapter", ""),
+                        "section": question.get("section", ""),
+                        "competency_tag": tag,
+                        "priority": "high",
+                        "reason": f"Missed points on {tag}",
+                    }
+                )
         question_results.append(
             {
                 "question_id": question["question_id"],
@@ -65,6 +92,6 @@ def grade_attempt(artifact: dict, attempt: dict) -> dict:
         "total_score": total_score,
         "max_score": max_score,
         "question_results": question_results,
-        "competency_breakdown": [],
-        "recommended_review": [],
+        "competency_breakdown": competency_breakdown,
+        "recommended_review": recommended_review,
     }
