@@ -30,6 +30,7 @@ const MathAnimatorViewer = dynamic(
   { ssr: false },
 );
 const QuizViewer = dynamic(() => import("@/components/quiz/QuizViewer"), { ssr: false });
+const ExamViewer = dynamic(() => import("@/components/exam/ExamViewer"), { ssr: false });
 const ResearchOutlineEditor = dynamic(
   () => import("@/components/research/ResearchOutlineEditor"),
   { ssr: false },
@@ -119,6 +120,17 @@ const AssistantMessage = memo(function AssistantMessage({
     return extractVisualizeResult(resultEvent.metadata);
   }, [msg.capability, resultEvent]);
 
+  const examArtifact = useMemo(() => {
+    if (msg.capability !== "course_assistant" || !resultEvent) return null;
+    const meta = resultEvent.metadata as Record<string, unknown> | undefined;
+    const raw = meta?.artifacts as Record<string, unknown> | undefined;
+    const ev = raw?.exam_artifact as undefined | null | Record<string, unknown>;
+    if (!ev || typeof ev !== "object") return null;
+    const q = ev.questions;
+    if (!Array.isArray(q)) return null;
+    return ev as unknown as import("@/lib/exam-types").ExamArtifact;
+  }, [msg.capability, resultEvent]);
+
   return (
     <>
       {hasCallTrace ? (
@@ -137,6 +149,15 @@ const AssistantMessage = memo(function AssistantMessage({
         <VisualizationViewer result={visualizeResult} />
       ) : quizQuestions && quizQuestions.length > 0 ? (
         <QuizViewer questions={quizQuestions} sessionId={sessionId} language={language} />
+      ) : examArtifact ? (
+        <ExamViewer
+          examArtifact={examArtifact}
+          initialAttempt={null}
+          sessionId={sessionId || ""}
+          onCreateStudyPlan={(attempt) => {
+            console.log("Study plan requested for exam attempt:", attempt);
+          }}
+        />
       ) : (
         <AssistantResponse content={msg.content} />
       )}

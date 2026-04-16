@@ -25,6 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { apiUrl } from "@/lib/api";
 import AssistantResponse from "@/components/common/AssistantResponse";
+import ExamViewer from "@/components/exam/ExamViewer";
 import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 import ProcessLogs from "@/components/common/ProcessLogs";
 import ResearchConfigPanel from "@/components/research/ResearchConfigPanel";
@@ -1709,8 +1710,12 @@ function CourseAssistantTester({
   const [messages, setMessages] = useState<TesterMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const updateConfig = <K extends keyof CourseAssistantFormConfig>(
     key: K,
@@ -1737,14 +1742,20 @@ function CourseAssistantTester({
     request.content.trim().length > 0 &&
     (!enabledTools.includes("rag") || Boolean(knowledgeBase));
 
-  const run = async () => {
-    if (!canRun || streaming) return;
+  const run = async (overrideInput?: string, overrideConfig?: CourseAssistantFormConfig) => {
+    const effectiveInput = overrideInput ?? input;
+    const effectiveConfig = overrideConfig ?? config;
+    const effectiveRequest = buildCourseAssistantRequest(effectiveInput, effectiveConfig);
+    const effectiveCanRun = effectiveRequest.content.trim().length > 0 &&
+      (!enabledTools.includes("rag") || Boolean(knowledgeBase));
+
+    if (!effectiveCanRun || streaming) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const userContent = input.trim() || request.content;
+    const userContent = effectiveInput.trim() || effectiveRequest.content;
 
     setMessages((prev) => [
       ...prev,
@@ -1760,11 +1771,11 @@ function CourseAssistantTester({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            content: request.content,
+            content: effectiveRequest.content,
             tools: enabledTools,
             knowledge_bases: enabledTools.includes("rag") && knowledgeBase ? [knowledgeBase] : [],
             language: i18n.language,
-            config: request.config,
+            config: effectiveRequest.config,
           }),
           signal: controller.signal,
         },
@@ -1864,23 +1875,31 @@ function CourseAssistantTester({
           : t("Optional: add instructions for the summary...");
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
-        <div className="mb-3 flex flex-wrap gap-2">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--background)]">
+      <div className="shrink-0 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
+        <div className="flex flex-wrap gap-2">
           {(["qa", "exam", "study_plan", "summary"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => updateConfig("mode", mode)}
-              className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
+              className={`rounded-full px-4 py-1.5 text-[12px] font-medium transition-colors ${
                 config.mode === mode
-                  ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  ? "bg-[var(--foreground)] text-[var(--background)]"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]/80"
               }`}
             >
               {t(titleCase(mode))}
             </button>
           ))}
         </div>
+      </div>
+
+      <details className="group shrink-0 border-b border-[var(--border)] bg-[var(--background)]">
+        <summary className="flex cursor-pointer items-center justify-between p-3 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted-foreground)] outline-none marker:content-none hover:bg-[var(--muted)]/50">
+           {t("Form Parameters")}
+           <span className="transition-transform duration-200 group-open:rotate-180">▼</span>
+        </summary>
+        <div className="max-h-[35vh] overflow-y-auto border-t border-[var(--border)] bg-[var(--card)] p-4">
 
         <div className="grid gap-3 md:grid-cols-2">
           <div>
@@ -1991,13 +2010,97 @@ function CourseAssistantTester({
             type="checkbox"
             checked={config.include_sources}
             onChange={(e) => updateConfig("include_sources", e.target.checked)}
-            className="h-4 w-4 rounded border-[var(--border)]"
-          />
-          {t("Include sources in result")}
+            />
         </label>
+        </div>
+      </details>
+
+      <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--card)] p-4">
+        {messages.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center text-[13px] text-[var(--muted-foreground)]">
+            <p>{t("Cuộc trò chuyện trống. Hãy thiết lập thông số bên trên và bắt đầu.")}</p>
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={`${msg.role}-${i}`}>
+            <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+              {msg.role === "user" ? t("You") : t("Assistant")}
+            </div>
+            {msg.role === "user" ? (
+              <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-[13px] text-[var(--foreground)]">{msg.content}</div>
+            ) : (
+               <div className="space-y-2">
+                 <TracePanel events={msg.events || []} />
+                 <ProcessLogs
+                   logs={msg.processLogs || []}
+                   executing={streaming && i === messages.length - 1}
+                   title={t("Process")}
+                 />
+                 {msg.error && (
+                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                     {msg.error}
+                   </div>
+                 )}
+                 {!msg.result?.data.response && (
+                   <AssistantResponse
+                     content={msg.content}
+                     className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5"
+                   />
+                 )}
+                 {(() => {
+                   const examArtifact = (() => {
+                     if (config.mode !== "exam" || !msg.result?.data.artifacts) return null;
+                     const artifacts = msg.result.data.artifacts as Record<string, unknown> | undefined;
+                     const ev = artifacts?.exam_artifact as undefined | null | Record<string, unknown>;
+                     if (!ev || typeof ev !== "object") return null;
+                     const q = ev.questions;
+                     if (!Array.isArray(q)) return null;
+                     return ev as unknown as import("@/lib/exam-types").ExamArtifact;
+                   })();
+
+                   if (examArtifact && msg.result?.data.response && typeof msg.result.data.response === "string") {
+                     return (
+                       <ExamViewer
+                         examArtifact={examArtifact}
+                         initialAttempt={null}
+                         sessionId=""
+                         onCreateStudyPlan={(attempt) => {
+                           console.log("Study plan requested:", attempt);
+                           const weakTags = attempt.score_report?.competency_breakdown
+                              ?.filter((c: any) => c.priority === "high")
+                              .map((c: any) => c.competency_tag)
+                              .join(", ");
+                           
+                           const newConfig = { ...config, mode: "study_plan" as const, chapter: examArtifact.title || "" };
+                           const newInput = `Hãy tạo một lộ trình ôn tập tập trung vào những phần tôi làm bài còn yếu: ${weakTags || "các kiến thức cơ bản"}`;
+                           
+                           onConfigChange?.(newConfig);
+                           setInput(newInput);
+                           run(newInput, newConfig);
+                         }}
+                       />
+                     );
+                   }
+
+                   if (msg.result?.data.response && typeof msg.result.data.response === "string" && config.mode === "exam") {
+                     return (
+                       <InteractiveExam
+                         content={msg.result.data.response}
+                         questionType={config.question_type || undefined}
+                       />
+                     );
+                   }
+
+                   return <CapabilityResultPanel result={msg.result} />;
+                 })()}
+               </div>
+            )}
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
       </div>
 
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="shrink-0 border-t border-[var(--border)] bg-[var(--background)] p-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -2018,7 +2121,7 @@ function CourseAssistantTester({
         ) : null}
         <div className="mt-2 flex justify-end">
           <button
-            onClick={run}
+            onClick={() => run()}
             disabled={!canRun || streaming}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -2027,46 +2130,6 @@ function CourseAssistantTester({
           </button>
         </div>
       </div>
-
-      {messages.map((msg, i) => (
-        <div key={`${msg.role}-${i}`}>
-          <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-            {msg.role === "user" ? t("You") : t("Assistant")}
-          </div>
-          {msg.role === "user" ? (
-            <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-[13px] text-[var(--foreground)]">{msg.content}</div>
-          ) : (
-            <div className="space-y-2">
-              <TracePanel events={msg.events || []} />
-              <ProcessLogs
-                logs={msg.processLogs || []}
-                executing={streaming && i === messages.length - 1}
-                title={t("Process")}
-              />
-              {msg.error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                  {msg.error}
-                </div>
-              )}
-              {/* Only show streamed content if there's no result response, to avoid duplicates */}
-              {!msg.result?.data.response && (
-                <AssistantResponse
-                  content={msg.content}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5"
-                />
-              )}
-              {msg.result?.data.response && typeof msg.result.data.response === "string" && config.mode === "exam" ? (
-                <InteractiveExam 
-                  content={msg.result.data.response} 
-                  questionType={config.question_type || undefined}
-                />
-              ) : (
-                <CapabilityResultPanel result={msg.result} />
-              )}
-            </div>
-          )}
-        </div>
-      ))}
     </div>
   );
 }
@@ -2089,8 +2152,12 @@ function CapabilityTester({
   const [messages, setMessages] = useState<TesterMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const updateLastAssistant = (updater: (msg: TesterMessage) => TesterMessage) => {
     setMessages((prev) => {
@@ -2219,37 +2286,45 @@ function CapabilityTester({
   };
 
   return (
-    <div className="space-y-3">
-      {messages.map((msg, i) => (
-        <div key={`${msg.role}-${i}`}>
-          <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-            {msg.role === "user" ? t("You") : t("Assistant")}
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--background)]">
+      <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--card)] p-4">
+        {messages.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center text-[13px] text-[var(--muted-foreground)]">
+            <p>{t("Cuộc trò chuyện trống. Hãy nhắn tin để bắt đầu.")}</p>
           </div>
-          {msg.role === "user" ? (
-            <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-[13px] text-[var(--foreground)]">{msg.content}</div>
-          ) : (
-            <div className="space-y-2">
-              <TracePanel events={msg.events || []} />
-              <ProcessLogs
-                logs={msg.processLogs || []}
-                executing={streaming && i === messages.length - 1}
-                title={t("Process")}
-              />
-              {msg.error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                  {msg.error}
-                </div>
-              )}
-              <AssistantResponse
-                content={msg.content}
-                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5"
-              />
-              <CapabilityResultPanel result={msg.result} />
+        )}
+        {messages.map((msg, i) => (
+          <div key={`${msg.role}-${i}`}>
+            <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+              {msg.role === "user" ? t("You") : t("Assistant")}
             </div>
-          )}
-        </div>
-      ))}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
+            {msg.role === "user" ? (
+              <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-[13px] text-[var(--foreground)]">{msg.content}</div>
+            ) : (
+              <div className="space-y-2">
+                <TracePanel events={msg.events || []} />
+                <ProcessLogs
+                  logs={msg.processLogs || []}
+                  executing={streaming && i === messages.length - 1}
+                  title={t("Process")}
+                />
+                {msg.error && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                    {msg.error}
+                  </div>
+                )}
+                <AssistantResponse
+                  content={msg.content}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5"
+                />
+                <CapabilityResultPanel result={msg.result} />
+              </div>
+            )}
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="shrink-0 border-t border-[var(--border)] bg-[var(--background)] p-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -2428,9 +2503,9 @@ export default function PlaygroundPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--background)] [scrollbar-gutter:stable]">
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mb-6">
+    <div className="flex h-full flex-col bg-[var(--background)]">
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-8 pb-4">
+        <div className="mb-6 shrink-0">
           <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)]">{t("Playground")}</h1>
           <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">
             {t("Explore the building blocks of DeepTutor: reusable tools and higher-level capabilities.")}
@@ -2442,9 +2517,9 @@ export default function PlaygroundPage() {
             <Loader2 className="h-5 w-5 animate-spin text-[var(--muted-foreground)]" />
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="flex flex-1 flex-col overflow-hidden space-y-5">
             {/* Tab bar */}
-            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--muted)] p-0.5">
+            <div className="inline-flex shrink-0 w-fit rounded-lg border border-[var(--border)] bg-[var(--muted)] p-0.5">
               <button
                 onClick={() => { setActiveKind("tool"); if (tools.length) setActiveName(tools[0].name); }}
                 className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all ${activeKind === "tool" ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
@@ -2460,16 +2535,16 @@ export default function PlaygroundPage() {
             </div>
 
             {/* Two-column layout */}
-            <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+            <div className="grid flex-1 gap-5 overflow-hidden lg:grid-cols-[280px_1fr]">
               {/* Left: Item list */}
-              <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-1.5">
+              <section className="flex h-full flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
+                <div className="mb-3 flex shrink-0 items-center gap-1.5">
                   {activeKind === "tool" ? <Terminal className="h-3.5 w-3.5 text-[var(--muted-foreground)]" /> : <Sparkles className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />}
                   <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                     {activeKind === "tool" ? t("Tools") : t("Capabilities")}
                   </h2>
                 </div>
-                <div className="space-y-1">
+                <div className="flex-1 space-y-1 overflow-y-auto">
                   {listItems.map((item) => {
                     const Icon = activeKind === "tool" ? getToolIcon(item.name) : getCapIcon(item.name);
                     return (
@@ -2498,11 +2573,11 @@ export default function PlaygroundPage() {
               </section>
 
               {/* Right: Detail panel */}
-              <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
+              <section className="flex h-full flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
                 {activeKind === "tool" && activeTool ? (() => {
                   const ToolIcon = getToolIcon(activeTool.name);
                   return (
-                    <div className="space-y-6">
+                    <div className="flex-1 space-y-6 overflow-y-auto p-5">
                       <div>
                         <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                           <ToolIcon size={13} strokeWidth={1.7} />
@@ -2522,17 +2597,24 @@ export default function PlaygroundPage() {
                 })() : activeCapability ? (() => {
                   const CapIcon = getCapIcon(activeCapability.name);
                   return (
-                    <div className="space-y-6">
-                      <div>
-                        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
-                          <CapIcon size={13} strokeWidth={1.7} />
-                          {t("Capability")}
-                        </div>
-                        <h2 className="mt-1 text-xl font-bold tracking-tight text-[var(--foreground)]">{t(getCapabilityLabel(activeCapability.name))}</h2>
-                        <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[var(--muted-foreground)]">
-                          {activeCapability.description}
-                        </p>
-                      </div>
+                    <div className="flex h-full flex-col bg-[var(--background)]">
+                      <details className="group shrink-0 border-b border-[var(--border)] bg-[var(--card)]">
+                        <summary className="flex cursor-pointer items-center justify-between px-5 p-4 font-semibold text-[13px] outline-none marker:content-none hover:bg-[var(--muted)]/50">
+                          <div className="flex items-center gap-2 text-[12px] uppercase tracking-[0.12em] text-[var(--foreground)]">
+                            <CapIcon size={14} strokeWidth={1.7} />
+                            {t("Capability Settings")}
+                          </div>
+                          <div className="text-[var(--muted-foreground)] transition-transform duration-200 group-open:rotate-180">
+                            ▼
+                          </div>
+                        </summary>
+                        <div className="max-h-[35vh] space-y-6 overflow-y-auto border-t border-[var(--border)] p-5">
+                          <div>
+                            <h2 className="text-lg font-bold tracking-tight text-[var(--foreground)]">{t(getCapabilityLabel(activeCapability.name))}</h2>
+                            <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-[var(--muted-foreground)]">
+                              {activeCapability.description}
+                            </p>
+                          </div>
 
                       <div>
                         <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">{t("Enable Tools")}</h3>
@@ -2585,11 +2667,10 @@ export default function PlaygroundPage() {
                         </div>
                       )}
 
-                      <div className="border-t border-[var(--border)] pt-6">
-                        <div className="mb-3">
-                          <h3 className="text-[14px] font-semibold text-[var(--foreground)]">{t("Try this capability")}</h3>
-                          <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">{t("Run a focused conversation here without leaving the playground.")}</p>
                         </div>
+                      </details>
+
+                      <div className="flex-1 overflow-hidden relative">
                         {activeCapability.name === "deep_question" ? (
                           <DeepQuestionTester
                             key={activeCapability.name}

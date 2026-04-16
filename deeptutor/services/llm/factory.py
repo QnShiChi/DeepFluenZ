@@ -176,7 +176,7 @@ async def complete(
     """
     provider_name = binding or "openai"
     provider_mode = "standard"
-    extra_headers: dict[str, str] = {}
+    extra_headers: dict[str, str] = kwargs.pop("extra_headers", None) or {}
     reasoning_effort = kwargs.pop("reasoning_effort", None)
 
     if not model or not base_url or api_key is None or not binding:
@@ -188,7 +188,7 @@ async def complete(
         binding = binding or config.binding or "openai"
         provider_name = getattr(config, "provider_name", binding or "openai")
         provider_mode = getattr(config, "provider_mode", "standard")
-        extra_headers = getattr(config, "extra_headers", {}) or {}
+        extra_headers = getattr(config, "extra_headers", {}) or extra_headers
         if reasoning_effort is None:
             reasoning_effort = getattr(config, "reasoning_effort", None)
     else:
@@ -351,7 +351,7 @@ async def stream(
     """Stream LLM responses with retry handling."""
     provider_name = binding or "openai"
     provider_mode = "standard"
-    extra_headers: dict[str, str] = {}
+    extra_headers: dict[str, str] = kwargs.pop("extra_headers", None) or {}
     reasoning_effort = kwargs.pop("reasoning_effort", None)
 
     if not model or not base_url or api_key is None or not binding:
@@ -363,7 +363,7 @@ async def stream(
         binding = binding or config.binding or "openai"
         provider_name = getattr(config, "provider_name", binding or "openai")
         provider_mode = getattr(config, "provider_mode", "standard")
-        extra_headers = getattr(config, "extra_headers", {}) or {}
+        extra_headers = getattr(config, "extra_headers", {}) or extra_headers
         if reasoning_effort is None:
             reasoning_effort = getattr(config, "reasoning_effort", None)
     else:

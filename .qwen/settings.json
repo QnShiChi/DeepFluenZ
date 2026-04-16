@@ -20,5 +20,52 @@
       "Bash(npm run *)"
     ]
   },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen/qwen3-coder:free",
+        "name": "qwen/qwen3-coder:free",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "description": "Qwen via OpenRouter",
+        "envKey": "OPENROUTER_API_KEY"
+      },
+      {
+        "id": "qwen/qwen3.6-plus",
+        "name": "Qwen 3.6 Plus",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "description": "Qwen 3.6 Plus via OpenRouter",
+        "envKey": "OPENROUTER_API_KEY"
+      },
+      {
+        "id": "qwen/qwen3.6-plus-preview",
+        "name": "Qwen 3.6 Plus Preview",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "description": "Qwen 3.6 Plus Preview via OpenRouter",
+        "envKey": "OPENROUTER_API_KEY"
+      },
+      {
+        "id": "google/gemma-4-31b-it:free",
+        "name": "Gemma 4 31B Free",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "description": "Gemma 4 31B Free via OpenRouter",
+        "envKey": "OPENROUTER_API_KEY"
+      },
+      {
+        "id": "google/gemma-4-26b-a4b-it:free",
+        "name": "Gemma 4 26B A4B Free",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "description": "Gemma 4 26B A4B Free via OpenRouter",
+        "envKey": "OPENROUTER_API_KEY"
+      }
+    ]
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
+  "model": {
+    "name": "qwen/qwen3.6-plus"
+  },
   "$version": 3
 }

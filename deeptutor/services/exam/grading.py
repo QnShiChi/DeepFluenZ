@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from typing import Any
 
 def _choice_ids(response: dict) -> list[str]:
     return [str(item) for item in response.get("choice_ids", [])]
@@ -50,31 +50,55 @@ def grade_attempt(artifact: dict, attempt: dict) -> dict:
             confidence = 0.6 if missing_concepts else 0.9
 
         total_score += awarded
+        tag_agg: dict[str, dict[str, Any]] = {}
         tags = question.get("competency_tags") or [""]
         for tag in tags:
             if not tag:
                 continue
-            competency_breakdown.append(
-                {
-                    "competency_tag": tag,
+            if tag not in tag_agg:
+                tag_agg[tag] = {
+                    "awarded_points": 0,
+                    "max_points": 0,
                     "chapter": question.get("chapter", ""),
                     "section": question.get("section", ""),
-                    "awarded_points": awarded,
-                    "max_points": max_points,
-                    "accuracy": (awarded / max_points) if max_points else 0,
-                    "priority": "high" if awarded < max_points else "low",
                 }
-            )
+            tag_agg[tag]["awarded_points"] += awarded
+            tag_agg[tag]["max_points"] += max_points
+
             if awarded < max_points:
-                recommended_review.append(
+                rec_key = f"{question.get('chapter', '')}|{question.get('section', '')}|{tag}"
+                if not any(r.get("_key") == rec_key for r in recommended_review):
+                    recommended_review.append(
+                        {
+                            "_key": rec_key,
+                            "chapter": question.get("chapter", ""),
+                            "section": question.get("section", ""),
+                            "competency_tag": tag,
+                            "priority": "high",
+                            "reason": f"Missed points on {tag}",
+                        }
+                    )
+        
+        for key, value in tag_agg.items():
+            existing = next((item for item in competency_breakdown if item["competency_tag"] == key), None)
+            if existing:
+                existing["awarded_points"] += value["awarded_points"]
+                existing["max_points"] += value["max_points"]
+                existing["accuracy"] = (existing["awarded_points"] / existing["max_points"]) if existing["max_points"] else 0
+                existing["priority"] = "high" if existing["awarded_points"] < existing["max_points"] else "low"
+            else:
+                competency_breakdown.append(
                     {
-                        "chapter": question.get("chapter", ""),
-                        "section": question.get("section", ""),
-                        "competency_tag": tag,
-                        "priority": "high",
-                        "reason": f"Missed points on {tag}",
+                        "competency_tag": key,
+                        "chapter": value["chapter"],
+                        "section": value["section"],
+                        "awarded_points": value["awarded_points"],
+                        "max_points": value["max_points"],
+                        "accuracy": (value["awarded_points"] / value["max_points"]) if value["max_points"] else 0,
+                        "priority": "high" if value["awarded_points"] < value["max_points"] else "low",
                     }
                 )
+
         question_results.append(
             {
                 "question_id": question["question_id"],
