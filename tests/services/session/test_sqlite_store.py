@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from pathlib import Path
 
@@ -102,6 +103,39 @@ def test_create_and_fetch_exam_attempt(store: SQLiteSessionStore) -> None:
     assert loaded is not None
     assert loaded["exam_id"] == artifact["exam_id"]
     assert loaded["status"] == "in_progress"
+
+
+def test_course_template_round_trips_import_report(store: SQLiteSessionStore) -> None:
+    payload = {
+        "course_id": "course-storage-1",
+        "title": "Stored Graph",
+        "source_type": "manual_json",
+        "source_summary": "1 section",
+        "import_version": "v1",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+        "import_report": {
+            "status": "backbone_only",
+            "topic_node_count": 0,
+            "enrichment_node_count": 0,
+            "edge_count": 0,
+            "cross_link_count": 0,
+            "warning_count": 0,
+        },
+    }
+
+    asyncio.run(store.upsert_course_template(payload["course_id"], json.dumps(payload)))
+    stored = asyncio.run(store.get_course_template(payload["course_id"]))
+
+    assert stored is not None
+    assert "backbone_only" in stored["template_json"]
 
 
 # ── Notebook entries ──────────────────────────────────────────────
