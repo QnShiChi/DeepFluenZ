@@ -100,14 +100,21 @@ async def import_course_template(
     Import a JSON course graph template and upsert it into the database.
     """
     course_id = payload.get("course_id")
+    session_id = payload.get("session_id")
     if not course_id:
         raise HTTPException(status_code=400, detail="Missing course_id in payload")
     
     try:
         # SQLiteStore provides synchronous logic wrapped or an async interface natively
         await store.upsert_course_template(course_id, json.dumps(payload, ensure_ascii=False))
+        if session_id:
+            updated = await store.update_session_preferences(session_id, {"course_id": course_id})
+            if not updated:
+                raise HTTPException(status_code=404, detail="Session not found")
         return {"course_id": course_id}
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/course-templates/{course_id}")

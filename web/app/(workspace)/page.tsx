@@ -717,7 +717,7 @@ export default function HomePage() {
     <div className="flex h-full flex-row overflow-hidden bg-[var(--background)]">
       {/* Left Pane: Knowledge Graph */}
       <div className="hidden lg:block w-[40%] shrink-0 border-r border-[var(--border)] relative bg-[var(--background)] z-10">
-        <KnowledgeGraphViewer />
+        <KnowledgeGraphViewer sessionId={state.sessionId ?? undefined} />
       </div>
 
       {/* Right Pane: Action Area */}

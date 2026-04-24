@@ -34,6 +34,7 @@ export interface SessionSummary {
     tools?: string[];
     knowledge_bases?: string[];
     language?: string;
+    course_id?: string;
   };
 }
 
@@ -65,6 +66,7 @@ export interface SessionDetail {
     tools?: string[];
     knowledge_bases?: string[];
     language?: string;
+    course_id?: string;
   };
   messages: SessionMessage[];
   active_turns?: ActiveTurnSummary[];
