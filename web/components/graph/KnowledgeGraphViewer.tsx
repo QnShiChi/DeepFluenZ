@@ -9,6 +9,7 @@ import {
   resolveKnowledgeGraphCourseId,
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
+import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
 
 const DEFAULT_NODES: Node[] = [
   { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
@@ -41,28 +42,16 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
 
   const applyCourseTemplate = (data: { nodes?: any[]; edges?: any[] }) => {
     if (!data || !data.nodes) return;
-    const fetchedNodes: Node[] = data.nodes.map((n: any, idx: number) => ({
-      id: n.node_id,
-      position: { x: 250, y: 50 + idx * 120 },
-      data: { label: n.title },
-      type: "default",
-    }));
-
-    const fetchedEdges: Edge[] = (data.edges || []).map((e: any, idx: number) => ({
-      id: `e-${idx}`,
-      source: e.source,
-      target: e.target,
-    }));
-
-    setNodes(fetchedNodes);
-    setEdges(fetchedEdges);
+    const flow = mapCourseKnowledgeGraphToFlow(data as any);
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.name.toLowerCase().endsWith('.pdf')) {
+    if (file.name.toLowerCase().endsWith(".pdf")) {
       setIsExtracting(true);
       try {
         const formData = new FormData();

@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -65,7 +66,7 @@ class SQLiteSessionStore:
         self.db_path = db_path or path_service.get_chat_history_db()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._migrate_legacy_db(path_service)
-        self._lock = asyncio.Lock()
+        self._lock = threading.RLock()
         self._initialize()
 
     def _migrate_legacy_db(self, path_service) -> None:
@@ -241,8 +242,8 @@ class SQLiteSessionStore:
             conn.commit()
 
     async def _run(self, fn, *args):
-        async with self._lock:
-            return await asyncio.to_thread(fn, *args)
+        with self._lock:
+            return fn(*args)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
