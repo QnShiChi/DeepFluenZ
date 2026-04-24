@@ -1,15 +1,18 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { ReactFlow, Background, Controls, Node, Edge } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { UnifiedWSClient, StreamEvent } from '@/lib/unified-ws';
+import React, { useEffect, useRef, useState } from "react";
+import { Background, Controls, Edge, Node, ReactFlow } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+
+import { apiUrl } from "@/lib/api";
+import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
+import { UnifiedWSClient, StreamEvent } from "@/lib/unified-ws";
 
 const DEFAULT_NODES: Node[] = [
-  { id: '1', position: { x: 250, y: 50 }, data: { label: 'Chapter 1: Intro' }, type: 'default' },
-  { id: '2', position: { x: 250, y: 200 }, data: { label: 'Chapter 2: Vars' }, type: 'default' },
+  { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
+  { id: "2", position: { x: 250, y: 200 }, data: { label: "Chapter 2: Vars" }, type: "default" },
 ];
 
 const DEFAULT_EDGES: Edge[] = [
-  { id: 'e1-2', source: '1', target: '2' },
+  { id: "e1-2", source: "1", target: "2" },
 ];
 
 interface DynamicNode {
@@ -36,12 +39,12 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.name.toLowerCase().endsWith('.pdf')) {
+    if (file.name.toLowerCase().endsWith(".pdf")) {
       setIsExtracting(true);
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const res = await fetch("http://localhost:8001/api/v1/course-templates/extract-pdf", {
+        const res = await fetch(apiUrl("/api/v1/course-templates/extract-pdf"), {
           method: "POST",
           body: formData,
         });
@@ -52,7 +55,7 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
         } else {
           try {
             const err = await res.json();
-            alert(`Failed to extract PDF: ${err.detail || 'Unknown error'}`);
+            alert(`Failed to extract PDF: ${err.detail || "Unknown error"}`);
           } catch {
             alert("Failed to extract PDF.");
           }
@@ -71,10 +74,13 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
     reader.onload = async (evt) => {
       try {
         const json = JSON.parse(evt.target?.result as string);
-        const res = await fetch("http://localhost:8001/api/v1/course-templates/import", {
+        const res = await fetch(apiUrl("/api/v1/course-templates/import"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(json)
+          body: JSON.stringify({
+            ...json,
+            ...(sessionId ? { session_id: sessionId } : {}),
+          }),
         });
         if (res.ok) {
           const resData = await res.json();
@@ -94,25 +100,13 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
 
   useEffect(() => {
     if (!courseId) return;
-    fetch(`http://localhost:8001/api/v1/course-templates/${courseId}`)
-      .then(res => res.json())
-      .then(data => {
+    fetch(apiUrl(`/api/v1/course-templates/${courseId}`))
+      .then((res) => res.json())
+      .then((data) => {
         if (!data || !data.nodes) return;
-        const fetchedNodes: Node[] = data.nodes.map((n: any, idx: number) => ({
-          id: n.node_id,
-          position: { x: 250, y: 50 + (idx * 120) },
-          data: { label: n.title },
-          type: 'default'
-        }));
-        
-        const fetchedEdges: Edge[] = (data.edges || []).map((e: any, idx: number) => ({
-          id: `e-${idx}`,
-          source: e.source,
-          target: e.target
-        }));
-
-        setNodes(fetchedNodes);
-        setEdges(fetchedEdges);
+        const flow = mapCourseKnowledgeGraphToFlow(data);
+        setNodes(flow.nodes);
+        setEdges(flow.edges);
       })
       .catch(console.error);
   }, [courseId]);
@@ -136,8 +130,8 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
                 id: sqId,
                 position: { x: 450, y: 125 + (idx * 100) }, 
                 data: { label: dynNode.title },
-                type: 'default',
-                style: { border: '2px solid red', borderRadius: '8px', padding: '10px' }
+                type: "default",
+                style: { border: "2px solid red", borderRadius: "8px", padding: "10px" }
               });
             }
           });
@@ -156,7 +150,7 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
                   source: depId,
                   target: sqId,
                   animated: true,
-                  style: { stroke: 'red', strokeWidth: 2 }
+                  style: { stroke: "red", strokeWidth: 2 }
                 });
               }
             });
@@ -188,7 +182,7 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
           type="file" 
           accept=".json,.pdf" 
           ref={fileInputRef} 
-          style={{ display: 'none' }} 
+          style={{ display: "none" }} 
           onChange={handleImport} 
         />
         <button 
