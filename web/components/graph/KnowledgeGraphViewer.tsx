@@ -14,6 +14,8 @@ import {
 import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
 import { getNodeProgress, markNodeProgress, type NodeStatus } from "@/lib/node-progress-api";
+import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
+import { describeGraphRecommendation } from "@/lib/graph-recommendation-ui";
 
 const DEFAULT_NODES: Node[] = [
   { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
@@ -50,6 +52,7 @@ export default function KnowledgeGraphViewer({
   const [edges, setEdges] = useState<Edge[]>(DEFAULT_EDGES);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
+  const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,9 +67,13 @@ export default function KnowledgeGraphViewer({
     });
   }, []);
 
-  const applyCourseTemplate = useCallback((data: { nodes?: any[]; edges?: any[] }, currentProgress: Record<string, NodeStatus>) => {
+  const applyCourseTemplate = useCallback((
+    data: { nodes?: any[]; edges?: any[] },
+    currentProgress: Record<string, NodeStatus>,
+    recommendedNodeId?: string | null,
+  ) => {
     if (!data || !data.nodes) return;
-    const flow = mapCourseKnowledgeGraphToFlow(data as any);
+    const flow = mapCourseKnowledgeGraphToFlow(data as any, { recommendedNodeId });
     
     // Apply progress styling
     const styledNodes = flow.nodes.map(node => {
@@ -201,11 +208,19 @@ export default function KnowledgeGraphViewer({
     const progressPromise = shouldLoadProgress && sessionId
       ? getNodeProgress(sessionId, courseId)
       : Promise.resolve({});
+    const recommendationPromise = shouldLoadProgress && sessionId
+      ? getGraphRecommendation(sessionId, courseId)
+      : Promise.resolve(null);
 
-    Promise.all([templatePromise, progressPromise])
-      .then(([templateData, progressData]) => {
+    Promise.all([templatePromise, progressPromise, recommendationPromise])
+      .then(([templateData, progressData, recommendationData]) => {
         setProgressMap(progressData as Record<string, NodeStatus>);
-        applyCourseTemplate(templateData, progressData as Record<string, NodeStatus>);
+        setRecommendation(recommendationData);
+        applyCourseTemplate(
+          templateData,
+          progressData as Record<string, NodeStatus>,
+          recommendationData?.recommended_node_id ?? null,
+        );
       })
       .catch(console.error);
   }, [courseId, sessionId, applyCourseTemplate]);
@@ -276,6 +291,16 @@ export default function KnowledgeGraphViewer({
 
   return (
     <div className="w-full h-full bg-slate-50 relative">
+      {recommendation ? (
+        <div className="absolute top-20 left-4 z-10 w-72 rounded-xl border border-blue-200 bg-white/95 p-3 shadow-sm">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+            {describeGraphRecommendation(recommendation).badge}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            {describeGraphRecommendation(recommendation).message}
+          </p>
+        </div>
+      ) : null}
       <div className="absolute top-4 left-4 z-10 flex gap-2">
         <input 
           type="file" 

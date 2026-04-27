@@ -49,12 +49,17 @@ function ensureUniqueId(
   return candidate;
 }
 
-export function mapCourseKnowledgeGraphToFlow(graph: CourseKnowledgeGraph) {
+export function mapCourseKnowledgeGraphToFlow(
+  graph: CourseKnowledgeGraph,
+  options?: { recommendedNodeId?: string | null },
+) {
   const seenNodeIds = new Set<string>();
   const seenEdgeIds = new Set<string>();
+  const recommendedNodeId = options?.recommendedNodeId ?? null;
 
   const nodes = graph.nodes.map((node, index) => {
     const id = ensureUniqueId(node.node_id, seenNodeIds, "node", index);
+    const isRecommended = id === recommendedNodeId;
     return {
       id,
       position: {
@@ -66,8 +71,15 @@ export function mapCourseKnowledgeGraphToFlow(graph: CourseKnowledgeGraph) {
         description: node.description ?? "",
         nodeType: node.node_type,
         difficulty: node.difficulty ?? "medium",
+        isRecommended,
       },
       type: "default",
+      style: isRecommended
+        ? {
+            border: "3px solid #3b82f6",
+            boxShadow: "0 0 0 4px rgba(59, 130, 246, 0.15)",
+          }
+        : undefined,
     };
   });
 

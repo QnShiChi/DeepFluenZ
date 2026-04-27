@@ -187,3 +187,39 @@ test("mapCourseKnowledgeGraphToFlow falls back when node and edge ids are missin
   assert.equal(flow.edges[0].id, "edge-0");
   assert.equal(flow.edges[1].id, "edge-1");
 });
+
+test("mapCourseKnowledgeGraphToFlow marks the recommended node with styling metadata", () => {
+  const flow = mapCourseKnowledgeGraphToFlow(
+    {
+      course_id: "intro-ai",
+      title: "Intro to AI",
+      source_type: "manual_json",
+      nodes: [
+        {
+          node_id: "topic_intro",
+          title: "Introduction to AI",
+          node_type: "topic",
+          description: "Overview",
+          difficulty: "easy",
+          learning_outcomes: [],
+          examples: [],
+          related_questions: [],
+          resources: [],
+          source_refs: [],
+        },
+      ],
+      edges: [],
+      audit: {
+        backbone_node_ids: ["topic_intro"],
+        enriched_node_ids: [],
+        backbone_edge_ids: [],
+        enriched_edge_ids: [],
+        warnings: [],
+      },
+    },
+    { recommendedNodeId: "topic_intro" },
+  );
+
+  assert.equal(flow.nodes[0].data.isRecommended, true);
+  assert.match(String(flow.nodes[0].style?.border), /3px/);
+});
