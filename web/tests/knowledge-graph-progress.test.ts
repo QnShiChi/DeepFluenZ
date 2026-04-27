@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeKnowledgeGraphProgress } from "../lib/knowledge-graph-progress.ts";
+import {
+  mergeKnowledgeGraphProgress,
+  reconcileKnowledgeGraphProgressAfterSync,
+} from "../lib/knowledge-graph-progress.ts";
 
 test("mergeKnowledgeGraphProgress keeps local mastered status when remote is weaker", () => {
   const merged = mergeKnowledgeGraphProgress(
@@ -13,5 +16,36 @@ test("mergeKnowledgeGraphProgress keeps local mastered status when remote is wea
     topic_intro: "mastered",
     topic_search: "explored",
     topic_planning: "explored",
+  });
+});
+
+test("reconcileKnowledgeGraphProgressAfterSync keeps local progress when sync succeeds", () => {
+  const reconciled = reconcileKnowledgeGraphProgressAfterSync(
+    {
+      topic_intro: "mastered",
+      topic_search: "explored",
+    },
+    {},
+  );
+
+  assert.deepEqual(reconciled, {
+    topic_intro: "mastered",
+    topic_search: "explored",
+  });
+});
+
+test("reconcileKnowledgeGraphProgressAfterSync preserves only failed entries when sync partially fails", () => {
+  const reconciled = reconcileKnowledgeGraphProgressAfterSync(
+    {
+      topic_intro: "mastered",
+      topic_search: "explored",
+    },
+    {
+      topic_search: "explored",
+    },
+  );
+
+  assert.deepEqual(reconciled, {
+    topic_search: "explored",
   });
 });

@@ -27,6 +27,7 @@ import {
   clearStoredKnowledgeGraphProgress,
   mergeKnowledgeGraphProgress,
   readStoredKnowledgeGraphProgress,
+  reconcileKnowledgeGraphProgressAfterSync,
   writeStoredKnowledgeGraphProgress,
 } from "@/lib/knowledge-graph-progress";
 import {
@@ -255,15 +256,10 @@ export default function KnowledgeGraphViewer({
       ).then((ok) => {
         if (ok) {
           const persisted = readStoredKnowledgeGraphProgress(courseId);
-          if (persisted[nodeId] === status) {
-            const nextPersisted = { ...persisted };
-            delete nextPersisted[nodeId];
-            if (Object.keys(nextPersisted).length) {
-              writeStoredKnowledgeGraphProgress(courseId, nextPersisted);
-            } else {
-              clearStoredKnowledgeGraphProgress(courseId);
-            }
-          }
+          writeStoredKnowledgeGraphProgress(
+            courseId,
+            reconcileKnowledgeGraphProgressAfterSync(persisted, {}),
+          );
           void refreshRecommendation(courseId);
         }
       });
@@ -445,8 +441,9 @@ export default function KnowledgeGraphViewer({
       }
 
       if (cancelled) return;
-      if (Object.keys(failed).length) {
-        writeStoredKnowledgeGraphProgress(courseId, failed);
+      const pendingAfterSync = reconcileKnowledgeGraphProgressAfterSync(pendingProgress, failed);
+      if (Object.keys(pendingAfterSync).length) {
+        writeStoredKnowledgeGraphProgress(courseId, pendingAfterSync);
       } else {
         clearStoredKnowledgeGraphProgress(courseId);
       }

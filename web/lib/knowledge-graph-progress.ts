@@ -17,6 +17,16 @@ export function mergeKnowledgeGraphProgress(
   return merged;
 }
 
+export function reconcileKnowledgeGraphProgressAfterSync(
+  localProgress: Record<string, KnowledgeGraphProgressStatus>,
+  failedProgress: Record<string, KnowledgeGraphProgressStatus>,
+): Record<string, KnowledgeGraphProgressStatus> {
+  if (Object.keys(failedProgress).length === 0) {
+    return { ...localProgress };
+  }
+  return { ...failedProgress };
+}
+
 export function readStoredKnowledgeGraphProgress(
   courseId: string | null | undefined,
 ): Record<string, KnowledgeGraphProgressStatus> {
