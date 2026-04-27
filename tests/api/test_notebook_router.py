@@ -140,6 +140,52 @@ def test_quiz_results_update_graph_progress_from_graph_context(store: SQLiteSess
     assert "topic_search" in state["weak_node_ids"]
 
 
+def test_quiz_results_retry_can_upgrade_graph_node_to_mastered(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Quiz Session"))
+    sid = session["id"]
+    asyncio.run(
+        store.upsert_course_template(
+            "intro-ai",
+            '{"course_id":"intro-ai","title":"Intro to AI","source_type":"manual_json","nodes":[],"edges":[],"audit":{"backbone_node_ids":[],"enriched_node_ids":[],"backbone_edge_ids":[],"enriched_edge_ids":[],"warnings":[]}}',
+        )
+    )
+
+    with TestClient(_build_app(store)) as client:
+        first = client.post(
+            f"/api/v1/sessions/{sid}/quiz-results",
+            json={
+                "answers": _quiz_answers(),
+                "graph_context": {
+                    "course_id": "intro-ai",
+                    "node_id": "topic_search",
+                },
+            },
+        )
+        assert first.status_code == 200
+
+        corrected = _quiz_answers()
+        corrected[0]["user_answer"] = "B"
+        corrected[0]["is_correct"] = True
+        second = client.post(
+            f"/api/v1/sessions/{sid}/quiz-results",
+            json={
+                "answers": corrected,
+                "graph_context": {
+                    "course_id": "intro-ai",
+                    "node_id": "topic_search",
+                },
+            },
+        )
+        assert second.status_code == 200
+
+    state = asyncio.run(store.get_student_state(sid, "intro-ai"))
+    assert state is not None
+    assert state["current_node_id"] == "topic_search"
+    assert "topic_search" in state["mastered_nodes"]
+    assert "topic_search" not in state["weak_node_ids"]
+    assert "topic_search" not in state["explored_nodes"]
+
+
 def test_bookmark_toggle(store: SQLiteSessionStore) -> None:
     session = asyncio.run(store.create_session())
     asyncio.run(store.upsert_notebook_entries(session["id"], [{

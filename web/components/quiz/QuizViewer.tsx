@@ -18,6 +18,7 @@ import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 import QuestionFollowupPanel, {
   type FollowupThreadState,
 } from "@/components/quiz/QuestionFollowupPanel";
+import { getUserAnswer, isQuizAnswerCorrect } from "@/lib/quiz-grading";
 import { buildQuizFollowupConfig, type QuizQuestion } from "@/lib/quiz-types";
 import {
   addEntryToCategory,
@@ -61,34 +62,6 @@ function createEmptyThreadState(): FollowupThreadState {
 
 function getQuestionKey(question: QuizQuestion, index: number): string {
   return question.question_id || `question_${index + 1}`;
-}
-
-function getUserAnswer(question: QuizQuestion, answer: AnswerState): string {
-  if (
-    question.question_type === "choice" &&
-    question.options &&
-    Object.keys(question.options).length > 0
-  ) {
-    return answer.selected ?? "";
-  }
-  return answer.typed.trim();
-}
-
-function isAnswerCorrect(question: QuizQuestion, answer: AnswerState): boolean {
-  const userAnswer = getUserAnswer(question, answer);
-  if (!userAnswer) return false;
-  const correct = question.correct_answer.trim();
-  const isChoice =
-    question.question_type === "choice" &&
-    question.options &&
-    Object.keys(question.options).length > 0;
-  if (isChoice) {
-    return (
-      userAnswer.toUpperCase() === correct.toUpperCase() ||
-      userAnswer.toUpperCase() === correct.charAt(0).toUpperCase()
-    );
-  }
-  return userAnswer.toLowerCase() === correct.toLowerCase();
 }
 
 export default function QuizViewer({
@@ -412,7 +385,7 @@ export default function QuizViewer({
 
   const isCorrect = useMemo(() => {
     if (!q || !ans.submitted) return null;
-    return isAnswerCorrect(q, ans);
+    return isQuizAnswerCorrect(q, ans);
   }, [ans, q]);
 
   const submittedResults = useMemo(
@@ -430,7 +403,7 @@ export default function QuizViewer({
             correct_answer: question.correct_answer,
             explanation: question.explanation ?? "",
             difficulty: question.difficulty ?? "",
-            is_correct: isAnswerCorrect(question, answer),
+            is_correct: isQuizAnswerCorrect(question, answer),
           },
         ];
       }),
@@ -478,7 +451,7 @@ export default function QuizViewer({
           explanation: question.explanation ?? "",
           difficulty: question.difficulty ?? "",
           user_answer: getUserAnswer(question, answer),
-          is_correct: isAnswerCorrect(question, answer),
+          is_correct: isQuizAnswerCorrect(question, answer),
         });
         setEntryIds((prev) => ({ ...prev, [key]: entry.id }));
         setBookmarked((prev) => ({ ...prev, [key]: entry.bookmarked }));
@@ -497,6 +470,7 @@ export default function QuizViewer({
   };
 
   const handleReset = () => {
+    lastReportedSignatureRef.current = "";
     updateAnswer({ selected: null, typed: "", submitted: false });
   };
 
@@ -526,7 +500,7 @@ export default function QuizViewer({
     const followupConfig = buildQuizFollowupConfig(
       q,
       getUserAnswer(q, answer),
-      isAnswerCorrect(q, answer),
+      isQuizAnswerCorrect(q, answer),
       sessionId,
     );
 
