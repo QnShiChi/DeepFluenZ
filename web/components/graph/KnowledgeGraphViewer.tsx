@@ -67,6 +67,18 @@ export default function KnowledgeGraphViewer({
     });
   }, []);
 
+  const handleJumpToRecommended = useCallback((nodeId: string) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    if (!target) return;
+    setSelectedNode({
+      id: target.id,
+      title: (target.data as Record<string, unknown>).label as string || target.id,
+      description: (target.data as Record<string, unknown>).description as string || "",
+      nodeType: (target.data as Record<string, unknown>).nodeType as string || "topic",
+      difficulty: (target.data as Record<string, unknown>).difficulty as string || "medium",
+    });
+  }, [nodes]);
+
   const applyCourseTemplate = useCallback((
     data: { nodes?: any[]; edges?: any[] },
     currentProgress: Record<string, NodeStatus>,
@@ -324,7 +336,13 @@ export default function KnowledgeGraphViewer({
       <NodeDetailPanel
         node={selectedNode}
         progressStatus={selectedNode ? progressMap[selectedNode.id] : undefined}
+        recommendation={recommendation ? {
+          recommendedNodeId: recommendation.recommended_node_id,
+          badge: describeGraphRecommendation(recommendation).badge,
+          message: describeGraphRecommendation(recommendation).message,
+        } : undefined}
         onClose={() => setSelectedNode(null)}
+        onJumpToRecommended={handleJumpToRecommended}
         onAskAbout={(n) => {
           setSelectedNode(null);
           if (sessionId && courseId) {

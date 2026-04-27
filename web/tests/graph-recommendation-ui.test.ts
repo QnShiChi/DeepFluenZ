@@ -15,3 +15,16 @@ test("describeGraphRecommendation formats remediation copy", () => {
   assert.equal(summary.badge, "Review first");
   assert.match(summary.message, /quiz/i);
 });
+
+test("describeGraphRecommendation formats advance copy", () => {
+  const summary = describeGraphRecommendation({
+    recommended_node_id: "topic_search",
+    mode: "advance",
+    score: 0.74,
+    reason_codes: ["prerequisites_ready", "close_to_current_path"],
+    backup_node_ids: [],
+  });
+
+  assert.equal(summary.badge, "Next");
+  assert.match(summary.message, /prerequisite/i);
+});

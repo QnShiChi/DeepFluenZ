@@ -14,9 +14,15 @@ export interface SelectedNodeData {
 interface NodeDetailPanelProps {
   node: SelectedNodeData | null;
   progressStatus?: NodeStatus;
+  recommendation?: {
+    recommendedNodeId: string;
+    badge: string;
+    message: string;
+  };
   onClose: () => void;
   onAskAbout: (node: SelectedNodeData) => void;
   onQuizNode: (node: SelectedNodeData) => void;
+  onJumpToRecommended?: (nodeId: string) => void;
 }
 
 const DIFFICULTY_STYLES: Record<string, string> = {
@@ -35,9 +41,11 @@ const NODE_TYPE_CONFIG: Record<string, { label: string; style: string; icon: Rea
 export default function NodeDetailPanel({
   node,
   progressStatus,
+  recommendation,
   onClose,
   onAskAbout,
   onQuizNode,
+  onJumpToRecommended,
 }: NodeDetailPanelProps) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -114,6 +122,18 @@ export default function NodeDetailPanel({
 
       {/* Description */}
       <div className="flex-1 overflow-y-auto p-4">
+        {recommendation && recommendation.recommendedNodeId !== node.id ? (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="font-semibold">{recommendation.badge}</div>
+            <p className="mt-1">{recommendation.message}</p>
+            <button
+              onClick={() => onJumpToRecommended?.(recommendation.recommendedNodeId)}
+              className="mt-2 text-xs font-medium text-amber-900 underline underline-offset-2"
+            >
+              Go to recommended node
+            </button>
+          </div>
+        ) : null}
         {node.description ? (
           <p className="text-sm text-slate-600 leading-relaxed">
             {node.description}
