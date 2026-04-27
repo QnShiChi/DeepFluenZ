@@ -248,6 +248,7 @@ export default function HomePage() {
   const toolBtnRef = useRef<HTMLButtonElement>(null);
   const refMenuRef = useRef<HTMLDivElement>(null);
   const refBtnRef = useRef<HTMLButtonElement>(null);
+  const { ref: composerRef, height: composerHeight } = useMeasuredHeight<HTMLDivElement>();
 
   const activeCap = useMemo(() => getCapability(state.activeCapability), [state.activeCapability]);
   const isQuizMode = activeCap.value === "deep_question";
@@ -257,8 +258,8 @@ export default function HomePage() {
   const selectedTools = useMemo(() => new Set(state.enabledTools), [state.enabledTools]);
   const ragActive = isResearchMode ? researchConfig.sources.includes("kb") : selectedTools.has("rag");
   const hasMessages = state.messages.length > 0;
+  const messageBottomInset = Math.max(composerHeight + 40, 180);
   const activeCapabilityKey = activeCap.value || "chat";
-  const { ref: composerRef, height: composerHeight } = useMeasuredHeight<HTMLDivElement>();
   const visibleTools = useMemo(
     () =>
       ALL_TOOLS.filter((t) => activeCap.allowedTools.includes(t.name)),
@@ -748,8 +749,8 @@ export default function HomePage() {
       </div>
 
       {/* Right Pane: Action Area */}
-      <div className="flex flex-1 flex-col min-w-0 overflow-hidden relative">
-        <div className="mx-auto flex w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
+      <div className="relative flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
 
         {/* ===== Welcome / Messages ===== */}
         {!hasMessages ? (
@@ -768,10 +769,9 @@ export default function HomePage() {
             ref={messagesContainerRef}
             data-chat-scroll-root="true"
             onScroll={handleMessagesScroll}
-            className={`mx-auto w-full flex-1 min-h-0 space-y-7 overflow-y-auto pt-6 pr-4 [scrollbar-gutter:stable] ${
+            className={`mx-auto h-full w-full flex-1 min-h-0 space-y-7 overflow-y-auto overscroll-contain pt-6 pr-4 [scrollbar-gutter:stable] [touch-action:pan-y] ${
               hasMessages ? "" : "pb-6"
             }`}
-            style={hasMessages ? { paddingBottom: `${Math.max(composerHeight + 24, 120)}px` } : undefined}
           >
             <div className="flex items-center justify-between pb-2">
               <span className="text-[13px] font-medium text-[var(--muted-foreground)]">{t(activeCap.label)}</span>
@@ -805,6 +805,11 @@ export default function HomePage() {
               onCopyAssistantMessage={copyAssistantMessage}
               onRetryMessage={(snapshot) => replaySnapshot(snapshot)}
               onConfirmOutline={handleConfirmOutline}
+            />
+            <div
+              aria-hidden="true"
+              className="w-full shrink-0"
+              style={{ height: `${messageBottomInset}px` }}
             />
             <div ref={messagesEndRef} className="h-px w-full shrink-0" />
           </div>

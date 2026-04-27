@@ -16,6 +16,12 @@ import { describeCourseTemplateImport } from "@/lib/course-template-import-feedb
 import { getNodeProgress, markNodeProgress, type NodeStatus } from "@/lib/node-progress-api";
 import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
 import { describeGraphRecommendation } from "@/lib/graph-recommendation-ui";
+import {
+  clearStoredKnowledgeGraphProgress,
+  mergeKnowledgeGraphProgress,
+  readStoredKnowledgeGraphProgress,
+  writeStoredKnowledgeGraphProgress,
+} from "@/lib/knowledge-graph-progress";
 
 const DEFAULT_NODES: Node[] = [
   { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
@@ -37,6 +43,30 @@ interface GraphStatePayload {
   current_node_id: string;
   mastered_nodes: string[];
   dynamic_nodes: DynamicNode[];
+}
+
+function styleNodeForProgress(node: Node, status?: NodeStatus): Node {
+  if (status === "mastered") {
+    return {
+      ...node,
+      style: {
+        ...node.style,
+        border: "2px solid #22c55e",
+        boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)",
+      },
+    };
+  }
+  if (status === "explored") {
+    return {
+      ...node,
+      style: {
+        ...node.style,
+        border: "2px solid #f59e0b",
+        boxShadow: node.style?.boxShadow ?? "none",
+      },
+    };
+  }
+  return node;
 }
 
 export default function KnowledgeGraphViewer({
@@ -86,27 +116,33 @@ export default function KnowledgeGraphViewer({
   ) => {
     if (!data || !data.nodes) return;
     const flow = mapCourseKnowledgeGraphToFlow(data as any, { recommendedNodeId });
-    
-    // Apply progress styling
-    const styledNodes = flow.nodes.map(node => {
-      const status = currentProgress[node.id];
-      if (status === "mastered") {
-        return {
-          ...node,
-          style: { ...node.style, border: "2px solid #22c55e", boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)" }
-        };
-      } else if (status === "explored") {
-        return {
-          ...node,
-          style: { ...node.style, border: "2px solid #f59e0b" }
-        };
-      }
-      return node;
-    });
+    const styledNodes = flow.nodes.map((node) => styleNodeForProgress(node, currentProgress[node.id]));
 
     setNodes(styledNodes);
     setEdges(flow.edges);
   }, []);
+
+  const updateNodeProgress = useCallback((
+    nodeId: string,
+    status: NodeStatus,
+    opts?: { persistRemote?: boolean },
+  ) => {
+    if (!courseId) return;
+
+    setProgressMap((prev) => {
+      const merged = mergeKnowledgeGraphProgress(prev, { [nodeId]: status });
+      writeStoredKnowledgeGraphProgress(courseId, merged);
+      return merged;
+    });
+
+    setNodes((prevNodes) => prevNodes.map((node) => (
+      node.id === nodeId ? styleNodeForProgress(node, status) : node
+    )));
+
+    if (opts?.persistRemote !== false && sessionId) {
+      void markNodeProgress(sessionId, courseId, nodeId, status);
+    }
+  }, [courseId, sessionId]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -226,16 +262,33 @@ export default function KnowledgeGraphViewer({
 
     Promise.all([templatePromise, progressPromise, recommendationPromise])
       .then(([templateData, progressData, recommendationData]) => {
-        setProgressMap(progressData as Record<string, NodeStatus>);
+        const mergedProgress = mergeKnowledgeGraphProgress(
+          progressData as Record<string, NodeStatus>,
+          readStoredKnowledgeGraphProgress(courseId),
+        );
+        setProgressMap(mergedProgress);
         setRecommendation(recommendationData);
         applyCourseTemplate(
           templateData,
-          progressData as Record<string, NodeStatus>,
+          mergedProgress,
           recommendationData?.recommended_node_id ?? null,
         );
       })
       .catch(console.error);
   }, [courseId, sessionId, applyCourseTemplate]);
+
+  useEffect(() => {
+    if (!sessionId || !courseId) return;
+
+    const pendingProgress = readStoredKnowledgeGraphProgress(courseId);
+    const entries = Object.entries(pendingProgress);
+    if (!entries.length) return;
+
+    entries.forEach(([nodeId, status]) => {
+      void markNodeProgress(sessionId, courseId, nodeId, status);
+    });
+    clearStoredKnowledgeGraphProgress(courseId);
+  }, [courseId, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -345,26 +398,12 @@ export default function KnowledgeGraphViewer({
         onJumpToRecommended={handleJumpToRecommended}
         onAskAbout={(n) => {
           setSelectedNode(null);
-          if (sessionId && courseId) {
-            void markNodeProgress(sessionId, courseId, n.id, "explored");
-            setProgressMap(prev => ({ ...prev, [n.id]: "explored" }));
-            setNodes(prevNodes => prevNodes.map(node => node.id === n.id 
-              ? { ...node, style: { ...node.style, border: "2px solid #f59e0b" } } 
-              : node
-            ));
-          }
+          updateNodeProgress(n.id, "explored");
           onAskAbout?.(n);
         }}
         onQuizNode={(n) => {
           setSelectedNode(null);
-          if (sessionId && courseId) {
-            void markNodeProgress(sessionId, courseId, n.id, "mastered");
-            setProgressMap(prev => ({ ...prev, [n.id]: "mastered" }));
-            setNodes(prevNodes => prevNodes.map(node => node.id === n.id 
-              ? { ...node, style: { ...node.style, border: "2px solid #22c55e", boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)" } } 
-              : node
-            ));
-          }
+          updateNodeProgress(n.id, "mastered");
           onQuizNode?.(n);
         }}
       />
