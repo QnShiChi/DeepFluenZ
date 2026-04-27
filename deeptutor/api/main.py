@@ -218,6 +218,7 @@ from deeptutor.api.routers import (
     question_notebook,
     course_templates,
     node_progress,
+    graph_recommendation,
 )
 
 # Include routers
@@ -241,6 +242,7 @@ app.include_router(vision_solver.router, prefix="/api/v1", tags=["vision-solver"
 app.include_router(tutorbot.router, prefix="/api/v1/tutorbot", tags=["tutorbot"])
 app.include_router(course_templates.router, prefix="/api/v1", tags=["course-templates"])
 app.include_router(node_progress.router, prefix="/api/v1", tags=["node-progress"])
+app.include_router(graph_recommendation.router, prefix="/api/v1", tags=["graph-recommendation"])
 
 # Unified WebSocket endpoint
 app.include_router(unified_ws.router, prefix="/api/v1", tags=["unified-ws"])
