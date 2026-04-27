@@ -14,6 +14,27 @@ export function resolveKnowledgeGraphCourseId(
   return fallbackCourseId || null;
 }
 
+export function resolveKnowledgeGraphLoadState(
+  courseId?: string | null,
+  sessionId?: string | null,
+): {
+  shouldLoadTemplate: boolean;
+  shouldLoadProgress: boolean;
+} {
+  const normalizedCourseId = courseId?.trim();
+  if (!normalizedCourseId) {
+    return {
+      shouldLoadTemplate: false,
+      shouldLoadProgress: false,
+    };
+  }
+
+  return {
+    shouldLoadTemplate: true,
+    shouldLoadProgress: Boolean(sessionId?.trim()),
+  };
+}
+
 export function readStoredKnowledgeGraphCourseId(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(KNOWLEDGE_GRAPH_COURSE_STORAGE_KEY);

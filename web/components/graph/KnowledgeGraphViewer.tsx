@@ -1,15 +1,19 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { ReactFlow, Background, Controls, Node, Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import NodeDetailPanel, { type SelectedNodeData } from "./NodeDetailPanel";
 import { UnifiedWSClient, StreamEvent } from "@/lib/unified-ws";
 import { apiUrl } from "@/lib/api";
 import { getSession } from "@/lib/session-api";
 import {
   readStoredKnowledgeGraphCourseId,
   resolveKnowledgeGraphCourseId,
+  resolveKnowledgeGraphLoadState,
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
 import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
+import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
+import { getNodeProgress, markNodeProgress, type NodeStatus } from "@/lib/node-progress-api";
 
 const DEFAULT_NODES: Node[] = [
   { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
@@ -33,19 +37,57 @@ interface GraphStatePayload {
   dynamic_nodes: DynamicNode[];
 }
 
-export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string }) {
+export default function KnowledgeGraphViewer({
+  sessionId,
+  onAskAbout,
+  onQuizNode,
+}: {
+  sessionId?: string;
+  onAskAbout?: (node: SelectedNodeData) => void;
+  onQuizNode?: (node: SelectedNodeData) => void;
+}) {
   const [nodes, setNodes] = useState<Node[]>(DEFAULT_NODES);
   const [edges, setEdges] = useState<Edge[]>(DEFAULT_EDGES);
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const applyCourseTemplate = (data: { nodes?: any[]; edges?: any[] }) => {
+  const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    setSelectedNode({
+      id: node.id,
+      title: (node.data as Record<string, unknown>).label as string || node.id,
+      description: (node.data as Record<string, unknown>).description as string || "",
+      nodeType: (node.data as Record<string, unknown>).nodeType as string || "topic",
+      difficulty: (node.data as Record<string, unknown>).difficulty as string || "medium",
+    });
+  }, []);
+
+  const applyCourseTemplate = useCallback((data: { nodes?: any[]; edges?: any[] }, currentProgress: Record<string, NodeStatus>) => {
     if (!data || !data.nodes) return;
     const flow = mapCourseKnowledgeGraphToFlow(data as any);
-    setNodes(flow.nodes);
+    
+    // Apply progress styling
+    const styledNodes = flow.nodes.map(node => {
+      const status = currentProgress[node.id];
+      if (status === "mastered") {
+        return {
+          ...node,
+          style: { ...node.style, border: "2px solid #22c55e", boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)" }
+        };
+      } else if (status === "explored") {
+        return {
+          ...node,
+          style: { ...node.style, border: "2px solid #f59e0b" }
+        };
+      }
+      return node;
+    });
+
+    setNodes(styledNodes);
     setEdges(flow.edges);
-  };
+  }, []);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -62,7 +104,7 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
         });
         if (res.ok) {
           const resData = await res.json();
-          alert("Course template extracted and imported successfully!");
+          alert(describeCourseTemplateImport(resData).message);
           setCourseId(resData.course_id);
           writeStoredKnowledgeGraphCourseId(resData.course_id);
         } else {
@@ -97,7 +139,7 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
         });
         if (res.ok) {
           const resData = await res.json();
-          alert("Course template imported successfully!");
+          alert(describeCourseTemplateImport(resData).message);
           setCourseId(resData.course_id);
           writeStoredKnowledgeGraphCourseId(resData.course_id);
         } else {
@@ -149,18 +191,24 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
   }, [sessionId]);
 
   useEffect(() => {
-    if (!courseId) return;
+    const { shouldLoadTemplate, shouldLoadProgress } = resolveKnowledgeGraphLoadState(courseId, sessionId);
+    if (!shouldLoadTemplate || !courseId) return;
 
-    fetch(apiUrl(`/api/v1/course-templates/${courseId}`))
-      .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load course template: ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        applyCourseTemplate(data);
+    const templatePromise = fetch(apiUrl(`/api/v1/course-templates/${courseId}`)).then((res) => {
+      if (!res.ok) throw new Error("Failed to load course template");
+      return res.json();
+    });
+    const progressPromise = shouldLoadProgress && sessionId
+      ? getNodeProgress(sessionId, courseId)
+      : Promise.resolve({});
+
+    Promise.all([templatePromise, progressPromise])
+      .then(([templateData, progressData]) => {
+        setProgressMap(progressData as Record<string, NodeStatus>);
+        applyCourseTemplate(templateData, progressData as Record<string, NodeStatus>);
       })
       .catch(console.error);
-  }, [courseId]);
+  }, [courseId, sessionId, applyCourseTemplate]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -244,10 +292,39 @@ export default function KnowledgeGraphViewer({ sessionId }: { sessionId?: string
           {isExtracting ? "Extracting AI Graph..." : "Import Syllabus"}
         </button>
       </div>
-      <ReactFlow nodes={nodes} edges={edges} fitView>
+      <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>
         <Background />
         <Controls />
       </ReactFlow>
+      <NodeDetailPanel
+        node={selectedNode}
+        progressStatus={selectedNode ? progressMap[selectedNode.id] : undefined}
+        onClose={() => setSelectedNode(null)}
+        onAskAbout={(n) => {
+          setSelectedNode(null);
+          if (sessionId && courseId) {
+            void markNodeProgress(sessionId, courseId, n.id, "explored");
+            setProgressMap(prev => ({ ...prev, [n.id]: "explored" }));
+            setNodes(prevNodes => prevNodes.map(node => node.id === n.id 
+              ? { ...node, style: { ...node.style, border: "2px solid #f59e0b" } } 
+              : node
+            ));
+          }
+          onAskAbout?.(n);
+        }}
+        onQuizNode={(n) => {
+          setSelectedNode(null);
+          if (sessionId && courseId) {
+            void markNodeProgress(sessionId, courseId, n.id, "mastered");
+            setProgressMap(prev => ({ ...prev, [n.id]: "mastered" }));
+            setNodes(prevNodes => prevNodes.map(node => node.id === n.id 
+              ? { ...node, style: { ...node.style, border: "2px solid #22c55e", boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)" } } 
+              : node
+            ));
+          }
+          onQuizNode?.(n);
+        }}
+      />
     </div>
   );
 }

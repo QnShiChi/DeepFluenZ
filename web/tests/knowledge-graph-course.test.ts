@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveKnowledgeGraphCourseId } from "../lib/knowledge-graph-course.ts";
+import {
+  resolveKnowledgeGraphCourseId,
+  resolveKnowledgeGraphLoadState,
+} from "../lib/knowledge-graph-course.ts";
 
 test("resolveKnowledgeGraphCourseId prefers the session-bound course id", () => {
   assert.equal(
@@ -17,4 +20,25 @@ test("resolveKnowledgeGraphCourseId falls back to stored course id when session 
 
 test("resolveKnowledgeGraphCourseId returns null when no course id exists", () => {
   assert.equal(resolveKnowledgeGraphCourseId({}, null), null);
+});
+
+test("resolveKnowledgeGraphLoadState loads template without a session id", () => {
+  assert.deepEqual(resolveKnowledgeGraphLoadState("stored-course", undefined), {
+    shouldLoadTemplate: true,
+    shouldLoadProgress: false,
+  });
+});
+
+test("resolveKnowledgeGraphLoadState loads template and progress when both ids exist", () => {
+  assert.deepEqual(resolveKnowledgeGraphLoadState("stored-course", "session-1"), {
+    shouldLoadTemplate: true,
+    shouldLoadProgress: true,
+  });
+});
+
+test("resolveKnowledgeGraphLoadState skips all loading when course id is missing", () => {
+  assert.deepEqual(resolveKnowledgeGraphLoadState(null, "session-1"), {
+    shouldLoadTemplate: false,
+    shouldLoadProgress: false,
+  });
 });

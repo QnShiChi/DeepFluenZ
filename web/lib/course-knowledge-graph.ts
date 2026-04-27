@@ -1,5 +1,5 @@
 export interface CourseKnowledgeGraphNode {
-  node_id: string;
+  node_id?: string;
   title: string;
   node_type: "topic" | "concept" | "skill" | "application";
   description?: string;
@@ -7,7 +7,7 @@ export interface CourseKnowledgeGraphNode {
 }
 
 export interface CourseKnowledgeGraphEdge {
-  edge_id: string;
+  edge_id?: string;
   source: string;
   target: string;
   relation_type: string;
@@ -29,28 +29,58 @@ export interface CourseKnowledgeGraph {
   };
 }
 
-export function mapCourseKnowledgeGraphToFlow(graph: CourseKnowledgeGraph) {
-  const nodes = graph.nodes.map((node, index) => ({
-    id: node.node_id,
-    position: {
-      x: node.node_type === "topic" ? 250 : 520,
-      y: 60 + index * 120,
-    },
-    data: {
-      label: node.title,
-      nodeType: node.node_type,
-      difficulty: node.difficulty ?? "medium",
-    },
-    type: "default",
-  }));
+function ensureUniqueId(
+  baseId: string | null | undefined,
+  seenIds: Set<string>,
+  fallbackPrefix: string,
+  index: number,
+): string {
+  const normalizedBase =
+    (typeof baseId === "string" ? baseId.trim() : "") || `${fallbackPrefix}-${index}`;
+  let candidate = normalizedBase;
+  let suffix = 1;
 
-  const edges = graph.edges.map((edge) => ({
-    id: edge.edge_id,
-    source: edge.source,
-    target: edge.target,
-    label: edge.relation_type,
-    animated: edge.relation_type === "related_to",
-  }));
+  while (seenIds.has(candidate)) {
+    candidate = `${normalizedBase}__${suffix}`;
+    suffix += 1;
+  }
+
+  seenIds.add(candidate);
+  return candidate;
+}
+
+export function mapCourseKnowledgeGraphToFlow(graph: CourseKnowledgeGraph) {
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
+
+  const nodes = graph.nodes.map((node, index) => {
+    const id = ensureUniqueId(node.node_id, seenNodeIds, "node", index);
+    return {
+      id,
+      position: {
+        x: node.node_type === "topic" ? 250 : 520,
+        y: 60 + index * 120,
+      },
+      data: {
+        label: node.title,
+        description: node.description ?? "",
+        nodeType: node.node_type,
+        difficulty: node.difficulty ?? "medium",
+      },
+      type: "default",
+    };
+  });
+
+  const edges = graph.edges.map((edge, index) => {
+    const id = ensureUniqueId(edge.edge_id, seenEdgeIds, "edge", index);
+    return {
+      id,
+      source: edge.source,
+      target: edge.target,
+      label: edge.relation_type,
+      animated: edge.relation_type === "related_to",
+    };
+  });
 
   return { nodes, edges };
 }

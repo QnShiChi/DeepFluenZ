@@ -1,11 +1,134 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 
 from deeptutor.services.graph.models import CourseKnowledgeGraph, GraphAudit, ImportReport
 from deeptutor.services.graph.normalizer import normalize_syllabus_text
 from deeptutor.services.graph.prompts import build_backbone_prompt, build_enrichment_prompt
 from deeptutor.services.graph.validator import validate_course_knowledge_graph
+
+
+def _parse_llm_json(raw_text: str) -> dict:
+    cleaned = (raw_text or "").strip()
+    if not cleaned:
+        raise JSONDecodeError("Empty LLM response", raw_text or "", 0)
+
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+
+    try:
+        return json.loads(cleaned)
+    except JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
+
+
+def _sanitize_node(raw_node: dict, *, index: int, default_node_type: str, default_id_prefix: str) -> dict:
+    node_id = str(raw_node.get("node_id") or f"{default_id_prefix}-{index}").strip()
+    title = str(raw_node.get("title") or node_id or f"Untitled {index + 1}").strip() or node_id
+    node_type = str(raw_node.get("node_type") or default_node_type).strip() or default_node_type
+    difficulty = str(raw_node.get("difficulty") or "medium").strip().lower()
+    difficulty_aliases = {
+        "low": "easy",
+        "easy": "easy",
+        "basic": "easy",
+        "medium": "medium",
+        "moderate": "medium",
+        "normal": "medium",
+        "intermediate": "medium",
+        "high": "hard",
+        "hard": "hard",
+        "advanced": "hard",
+    }
+
+    return {
+        "node_id": node_id,
+        "title": title,
+        "node_type": node_type,
+        "description": str(raw_node.get("description") or "").strip(),
+        "difficulty": difficulty_aliases.get(difficulty, "medium"),
+        "learning_outcomes": list(raw_node.get("learning_outcomes") or []),
+        "examples": list(raw_node.get("examples") or []),
+        "related_questions": list(raw_node.get("related_questions") or []),
+        "resources": list(raw_node.get("resources") or []),
+        "source_refs": list(raw_node.get("source_refs") or []),
+    }
+
+
+def _sanitize_edge(
+    raw_edge: dict,
+    *,
+    index: int,
+    default_relation_type: str,
+    default_confidence: float,
+    default_id_prefix: str,
+) -> dict | None:
+    source = str(raw_edge.get("source") or "").strip()
+    target = str(raw_edge.get("target") or "").strip()
+    if not source or not target:
+        return None
+
+    return {
+        "edge_id": str(raw_edge.get("edge_id") or f"{default_id_prefix}-{index}").strip() or f"{default_id_prefix}-{index}",
+        "source": source,
+        "target": target,
+        "relation_type": str(raw_edge.get("relation_type") or default_relation_type).strip() or default_relation_type,
+        "confidence": raw_edge.get("confidence") if raw_edge.get("confidence") is not None else default_confidence,
+        "rationale": str(raw_edge.get("rationale") or "").strip(),
+        "source_refs": list(raw_edge.get("source_refs") or []),
+    }
+
+
+def _sanitize_graph_fragment(
+    raw_fragment: dict,
+    *,
+    default_node_type: str,
+    default_relation_type: str,
+    default_confidence: float,
+    node_id_prefix: str,
+    edge_id_prefix: str,
+) -> dict:
+    raw_nodes = raw_fragment.get("nodes") or []
+    raw_edges = raw_fragment.get("edges") or []
+
+    nodes = [
+        _sanitize_node(
+            raw_node,
+            index=index,
+            default_node_type=default_node_type,
+            default_id_prefix=node_id_prefix,
+        )
+        for index, raw_node in enumerate(raw_nodes)
+        if isinstance(raw_node, dict)
+    ]
+
+    edges = []
+    for index, raw_edge in enumerate(raw_edges):
+        if not isinstance(raw_edge, dict):
+            continue
+        sanitized = _sanitize_edge(
+            raw_edge,
+            index=index,
+            default_relation_type=default_relation_type,
+            default_confidence=default_confidence,
+            default_id_prefix=edge_id_prefix,
+        )
+        if sanitized is not None:
+            edges.append(sanitized)
+
+    return {"nodes": nodes, "edges": edges}
 
 
 async def build_course_knowledge_graph(
@@ -19,7 +142,14 @@ async def build_course_knowledge_graph(
     normalized = normalize_syllabus_text(source_text)
 
     backbone_raw = await llm.complete(build_backbone_prompt(normalized.model_dump_json()))
-    backbone_data = json.loads(backbone_raw)
+    backbone_data = _sanitize_graph_fragment(
+        _parse_llm_json(backbone_raw),
+        default_node_type="topic",
+        default_relation_type="prerequisite",
+        default_confidence=1.0,
+        node_id_prefix="backbone-node",
+        edge_id_prefix="backbone-edge",
+    )
 
     backbone_edges = backbone_data.get("edges", [])
     payload = {
@@ -49,7 +179,14 @@ async def build_course_knowledge_graph(
 
     try:
         enrichment_raw = await llm.complete(build_enrichment_prompt(json.dumps(payload)))
-        enrichment = json.loads(enrichment_raw)
+        enrichment = _sanitize_graph_fragment(
+            _parse_llm_json(enrichment_raw),
+            default_node_type="concept",
+            default_relation_type="related_to",
+            default_confidence=0.5,
+            node_id_prefix="enrichment-node",
+            edge_id_prefix="enrichment-edge",
+        )
         payload["nodes"].extend(enrichment.get("nodes", []))
         payload["edges"].extend(enrichment.get("edges", []))
         payload["audit"]["enriched_node_ids"] = [node["node_id"] for node in enrichment.get("nodes", [])]

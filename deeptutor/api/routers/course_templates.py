@@ -56,6 +56,7 @@ async def extract_course_template_from_pdf(
         return {
             "course_id": graph.course_id,
             "import_report": graph.import_report.model_dump() if graph.import_report else None,
+            "warnings": list(graph.audit.warnings),
         }
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail=f"AI returned invalid JSON: {exc}") from exc
@@ -87,6 +88,7 @@ async def import_course_template(
         return {
             "course_id": course_id,
             "import_report": graph.import_report.model_dump() if graph.import_report else None,
+            "warnings": list(graph.audit.warnings),
         }
     except HTTPException:
         raise

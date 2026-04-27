@@ -239,6 +239,11 @@ class SQLiteSessionStore:
                 conn.execute(
                     "ALTER TABLE sessions ADD COLUMN preferences_json TEXT DEFAULT '{}'"
                 )
+            graph_cols = {row[1] for row in conn.execute("PRAGMA table_info(student_graph_states)").fetchall()}
+            if "explored_nodes_json" not in graph_cols:
+                conn.execute(
+                    "ALTER TABLE student_graph_states ADD COLUMN explored_nodes_json TEXT DEFAULT '[]'"
+                )
             conn.commit()
 
     async def _run(self, fn, *args):
@@ -1383,18 +1388,19 @@ class SQLiteSessionStore:
         current_node_id = state_dict.get("current_node_id", "")
         mastered_nodes_json = _json_dumps(state_dict.get("mastered_nodes", []))
         dynamic_nodes_json = _json_dumps(state_dict.get("dynamic_nodes", []))
+        explored_nodes_json = _json_dumps(state_dict.get("explored_nodes", []))
         
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id, 
-                    mastered_nodes_json, dynamic_nodes_json, 
+                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
+                VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
                 """,
-                (session_id, subject_id, current_node_id, mastered_nodes_json, dynamic_nodes_json, session_id, subject_id, now, now)
+                (session_id, subject_id, current_node_id, mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, session_id, subject_id, now, now)
             )
             conn.commit()
         return cur.rowcount > 0
@@ -1413,10 +1419,81 @@ class SQLiteSessionStore:
         payload = dict(row)
         payload["mastered_nodes"] = _json_loads(payload.pop("mastered_nodes_json", ""), [])
         payload["dynamic_nodes"] = _json_loads(payload.pop("dynamic_nodes_json", ""), [])
+        payload["explored_nodes"] = _json_loads(payload.pop("explored_nodes_json", ""), [])
         return payload
 
     async def get_student_state(self, session_id: str, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_student_state_sync, session_id, subject_id)
+
+    def _mark_node_progress_sync(self, session_id: str, subject_id: str, node_id: str, status: str) -> bool:
+        """Mark a node as 'explored' or 'mastered'. Mastered supersedes explored."""
+        now = time.time()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT mastered_nodes_json, explored_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?",
+                (session_id, subject_id),
+            ).fetchone()
+            if row:
+                mastered = _json_loads(row["mastered_nodes_json"], [])
+                explored = _json_loads(row["explored_nodes_json"], [])
+            else:
+                mastered = []
+                explored = []
+
+            if status == "mastered":
+                if node_id not in mastered:
+                    mastered.append(node_id)
+                if node_id in explored:
+                    explored.remove(node_id)
+            elif status == "explored":
+                if node_id not in explored and node_id not in mastered:
+                    explored.append(node_id)
+                else:
+                    return True  # already explored or mastered
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO student_graph_states (
+                    session_id, subject_id, current_node_id,
+                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json,
+                    created_at, updated_at
+                )
+                VALUES (
+                    ?, ?, COALESCE((SELECT current_node_id FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
+                    ?, COALESCE((SELECT dynamic_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'), ?,
+                    COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?
+                )
+                """,
+                (session_id, subject_id, session_id, subject_id,
+                 _json_dumps(mastered), session_id, subject_id, _json_dumps(explored),
+                 session_id, subject_id, now, now),
+            )
+            conn.commit()
+        return True
+
+    async def mark_node_progress(self, session_id: str, subject_id: str, node_id: str, status: str) -> bool:
+        return await self._run(self._mark_node_progress_sync, session_id, subject_id, node_id, status)
+
+    def _get_node_progress_sync(self, session_id: str, subject_id: str) -> dict[str, str]:
+        """Return {node_id: 'explored'|'mastered'} for all tracked nodes."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT mastered_nodes_json, explored_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?",
+                (session_id, subject_id),
+            ).fetchone()
+        if not row:
+            return {}
+        mastered = _json_loads(row["mastered_nodes_json"], [])
+        explored = _json_loads(row["explored_nodes_json"], [])
+        result: dict[str, str] = {}
+        for nid in explored:
+            result[nid] = "explored"
+        for nid in mastered:
+            result[nid] = "mastered"
+        return result
+
+    async def get_node_progress(self, session_id: str, subject_id: str) -> dict[str, str]:
+        return await self._run(self._get_node_progress_sync, session_id, subject_id)
 
 
 _instance: SQLiteSessionStore | None = None

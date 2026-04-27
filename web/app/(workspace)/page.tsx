@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import type { SelectedRecord } from "@/app/(workspace)/guide/types";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
 import KnowledgeGraphViewer from "@/components/graph/KnowledgeGraphViewer";
+import type { SelectedNodeData } from "@/components/graph/NodeDetailPanel";
 import ChatComposer from "@/components/chat/home/ChatComposer";
 import { ChatMessageList } from "@/components/chat/home/ChatMessages";
 import { apiUrl } from "@/lib/api";
@@ -59,6 +60,7 @@ import {
   type ResearchSource,
 } from "@/lib/research-types";
 import { listKnowledgeBases } from "@/lib/knowledge-api";
+import { buildKnowledgeGraphQuizMessage } from "@/lib/knowledge-graph-actions";
 
 const NotebookRecordPicker = dynamic(() => import("@/components/notebook/NotebookRecordPicker"), {
   ssr: false,
@@ -717,7 +719,32 @@ export default function HomePage() {
     <div className="flex h-full flex-row overflow-hidden bg-[var(--background)]">
       {/* Left Pane: Knowledge Graph */}
       <div className="hidden lg:block w-[40%] shrink-0 border-r border-[var(--border)] relative bg-[var(--background)] z-10">
-        <KnowledgeGraphViewer sessionId={state.sessionId ?? undefined} />
+        <KnowledgeGraphViewer
+          sessionId={state.sessionId ?? undefined}
+          onAskAbout={(node: SelectedNodeData) => {
+            handleSelectCapability("");
+            setTools(["rag"]);
+            const prompt = node.description
+              ? `Hãy giải thích chi tiết cho tôi về: ${node.title}. ${node.description}. (Trả lời bằng tiếng Việt)`
+              : `Hãy giải thích chi tiết cho tôi về: ${node.title}. (Trả lời bằng tiếng Việt)`;
+            sendMessage(prompt);
+          }}
+          onQuizNode={(node: SelectedNodeData) => {
+            handleSelectCapability("deep_question");
+            const quizRequest = buildKnowledgeGraphQuizMessage(node, {
+              language: state.language,
+              knowledgeBases: state.knowledgeBases,
+            });
+            sendMessage(
+              quizRequest.content,
+              [],
+              quizRequest.config,
+              undefined,
+              undefined,
+              quizRequest.options,
+            );
+          }}
+        />
       </div>
 
       {/* Right Pane: Action Area */}

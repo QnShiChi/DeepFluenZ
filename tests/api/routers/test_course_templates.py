@@ -60,6 +60,23 @@ async def test_import_course_template_returns_import_report(store: SQLiteSession
 
     assert response["course_id"] == "test-course-import-knowledge-1"
     assert response["import_report"]["status"] == "backbone_only"
+    assert response["warnings"] == []
+
+
+@pytest.mark.anyio
+async def test_import_course_template_returns_audit_warnings(store: SQLiteSessionStore) -> None:
+    payload = build_graph_payload("test-course-import-knowledge-1-warning")
+    payload["audit"]["warnings"] = ["Enrichment stage failed; saved backbone-only graph."]
+    payload["import_report"]["warning_count"] = 1
+
+    response = await course_templates_module.import_course_template(
+        payload=payload,
+        store=store,
+    )
+
+    assert response["course_id"] == "test-course-import-knowledge-1-warning"
+    assert response["import_report"]["status"] == "backbone_only"
+    assert response["warnings"] == ["Enrichment stage failed; saved backbone-only graph."]
 
 
 @pytest.mark.anyio
