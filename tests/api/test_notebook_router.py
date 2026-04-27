@@ -110,6 +110,36 @@ def test_quiz_results_upserts_on_retry(store: SQLiteSessionStore) -> None:
         assert q1["user_answer"] == "B"
 
 
+def test_quiz_results_update_graph_progress_from_graph_context(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Quiz Session"))
+    sid = session["id"]
+    asyncio.run(
+        store.upsert_course_template(
+            "intro-ai",
+            '{"course_id":"intro-ai","title":"Intro to AI","source_type":"manual_json","nodes":[],"edges":[],"audit":{"backbone_node_ids":[],"enriched_node_ids":[],"backbone_edge_ids":[],"enriched_edge_ids":[],"warnings":[]}}',
+        )
+    )
+
+    with TestClient(_build_app(store)) as client:
+        resp = client.post(
+            f"/api/v1/sessions/{sid}/quiz-results",
+            json={
+                "answers": _quiz_answers(),
+                "graph_context": {
+                    "course_id": "intro-ai",
+                    "node_id": "topic_search",
+                },
+            },
+        )
+        assert resp.status_code == 200
+
+    state = asyncio.run(store.get_student_state(sid, "intro-ai"))
+    assert state is not None
+    assert state["current_node_id"] == "topic_search"
+    assert "topic_search" in state["explored_nodes"]
+    assert "topic_search" in state["weak_node_ids"]
+
+
 def test_bookmark_toggle(store: SQLiteSessionStore) -> None:
     session = asyncio.run(store.create_session())
     asyncio.run(store.upsert_notebook_entries(session["id"], [{

@@ -223,3 +223,92 @@ test("mapCourseKnowledgeGraphToFlow marks the recommended node with styling meta
   assert.equal(flow.nodes[0].data.isRecommended, true);
   assert.match(String(flow.nodes[0].style?.border), /3px/);
 });
+
+test("mapCourseKnowledgeGraphToFlow marks unmet prerequisite nodes as locked and current node as in progress", () => {
+  const flow = mapCourseKnowledgeGraphToFlow(
+    {
+      course_id: "intro-ai",
+      title: "Intro to AI",
+      source_type: "manual_json",
+      nodes: [
+        {
+          node_id: "topic_intro",
+          title: "Introduction to AI",
+          node_type: "topic",
+          description: "Overview",
+          difficulty: "easy",
+          learning_outcomes: [],
+          examples: [],
+          related_questions: [],
+          resources: [],
+          source_refs: [],
+        },
+        {
+          node_id: "topic_search",
+          title: "Search",
+          node_type: "topic",
+          description: "Search basics",
+          difficulty: "medium",
+          learning_outcomes: [],
+          examples: [],
+          related_questions: [],
+          resources: [],
+          source_refs: [],
+        },
+        {
+          node_id: "topic_planning",
+          title: "Planning",
+          node_type: "topic",
+          description: "Planning basics",
+          difficulty: "hard",
+          learning_outcomes: [],
+          examples: [],
+          related_questions: [],
+          resources: [],
+          source_refs: [],
+        },
+      ],
+      edges: [
+        {
+          edge_id: "edge_intro_search",
+          source: "topic_intro",
+          target: "topic_search",
+          relation_type: "prerequisite",
+          confidence: 1,
+          rationale: "",
+          source_refs: [],
+        },
+        {
+          edge_id: "edge_search_planning",
+          source: "topic_search",
+          target: "topic_planning",
+          relation_type: "prerequisite",
+          confidence: 1,
+          rationale: "",
+          source_refs: [],
+        },
+      ],
+      audit: {
+        backbone_node_ids: ["topic_intro", "topic_search", "topic_planning"],
+        enriched_node_ids: [],
+        backbone_edge_ids: ["edge_intro_search", "edge_search_planning"],
+        enriched_edge_ids: [],
+        warnings: [],
+      },
+    },
+    {
+      currentNodeId: "topic_search",
+      progressMap: {
+        topic_intro: "mastered",
+        topic_search: "explored",
+      },
+    },
+  );
+
+  const currentNode = flow.nodes.find((node) => node.id === "topic_search");
+  const lockedNode = flow.nodes.find((node) => node.id === "topic_planning");
+
+  assert.equal(currentNode?.data.graphState, "in_progress");
+  assert.equal(lockedNode?.data.graphState, "locked");
+  assert.match(String(lockedNode?.style?.opacity), /0\.6|0\.55/);
+});

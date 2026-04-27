@@ -87,3 +87,74 @@ def test_recommend_next_graph_node_switches_to_review_when_only_explored_nodes_r
     assert recommendation.recommended_node_id == "topic_planning"
     assert recommendation.mode == "review"
     assert "needs_review_before_advance" in recommendation.reason_codes
+
+
+def test_recommend_next_graph_node_uses_current_frontier_over_disconnected_topics() -> None:
+    graph = CourseKnowledgeGraph.model_validate(
+        {
+            "course_id": "intro-ai",
+            "title": "Intro to AI",
+            "source_type": "manual_json",
+            "nodes": [
+                {"node_id": "topic_intro", "title": "Intro", "node_type": "topic"},
+                {"node_id": "topic_search", "title": "Search", "node_type": "topic"},
+                {"node_id": "topic_planning", "title": "Planning", "node_type": "topic"},
+                {"node_id": "topic_ethics", "title": "Ethics", "node_type": "topic"},
+            ],
+            "edges": [
+                {
+                    "edge_id": "edge_intro_search",
+                    "source": "topic_intro",
+                    "target": "topic_search",
+                    "relation_type": "prerequisite",
+                    "confidence": 1.0,
+                    "rationale": "",
+                    "source_refs": [],
+                },
+                {
+                    "edge_id": "edge_search_planning",
+                    "source": "topic_search",
+                    "target": "topic_planning",
+                    "relation_type": "prerequisite",
+                    "confidence": 1.0,
+                    "rationale": "",
+                    "source_refs": [],
+                },
+            ],
+            "audit": {
+                "backbone_node_ids": ["topic_intro", "topic_search", "topic_planning", "topic_ethics"],
+                "enriched_node_ids": [],
+                "backbone_edge_ids": ["edge_intro_search", "edge_search_planning"],
+                "enriched_edge_ids": [],
+                "warnings": [],
+            },
+        }
+    )
+
+    recommendation = recommend_next_graph_node(
+        graph=graph,
+        student_state={
+            "current_node_id": "topic_search",
+            "mastered_nodes": ["topic_intro"],
+            "explored_nodes": ["topic_search"],
+        },
+    )
+
+    assert recommendation.recommended_node_id != "topic_ethics"
+    assert recommendation.recommended_node_id in {"topic_search", "topic_planning"}
+
+
+def test_recommend_next_graph_node_returns_remediation_prerequisite_for_recent_weakness() -> None:
+    recommendation = recommend_next_graph_node(
+        graph=build_graph(),
+        student_state={
+            "current_node_id": "topic_planning",
+            "mastered_nodes": ["topic_intro"],
+            "explored_nodes": ["topic_planning"],
+            "weak_node_ids": ["topic_planning"],
+        },
+    )
+
+    assert recommendation.recommended_node_id == "topic_search"
+    assert recommendation.mode == "remediate"
+    assert "recent_quiz_weakness" in recommendation.reason_codes

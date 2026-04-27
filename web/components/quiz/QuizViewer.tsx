@@ -28,7 +28,7 @@ import {
   upsertNotebookEntry,
   type NotebookCategory,
 } from "@/lib/notebook-api";
-import { recordQuizResults } from "@/lib/session-api";
+import { recordQuizResults, type GraphQuizContext } from "@/lib/session-api";
 import { shouldAppendEventContent } from "@/lib/stream";
 import { type StartTurnMessage, type StreamEvent, UnifiedWSClient } from "@/lib/unified-ws";
 
@@ -125,6 +125,15 @@ export default function QuizViewer({
     () => Object.values(answers).filter((answer) => answer.submitted).length,
     [answers],
   );
+  const graphContext = useMemo<GraphQuizContext | null>(() => {
+    const firstQuestion = questions[0];
+    const raw = firstQuestion?.graph_context;
+    if (!raw?.course_id || !raw?.node_id) return null;
+    return {
+      course_id: raw.course_id,
+      node_id: raw.node_id,
+    };
+  }, [questions]);
 
   useEffect(() => {
     threadsRef.current = threads;
@@ -433,11 +442,18 @@ export default function QuizViewer({
     const signature = JSON.stringify(submittedResults);
     if (!signature || signature === lastReportedSignatureRef.current) return;
     lastReportedSignatureRef.current = signature;
-    void recordQuizResults(sessionId, submittedResults)
+    void recordQuizResults(sessionId, submittedResults, graphContext)
       .then(() => {
         questions.forEach((question, i) => {
           void refreshEntryId(getQuestionKey(question, i), sessionId);
         });
+        if (graphContext && typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("deeptutor:graph-quiz-updated", {
+              detail: graphContext,
+            }),
+          );
+        }
       })
       .catch((error) => {
         console.error("Failed to record quiz results:", error);
@@ -445,7 +461,7 @@ export default function QuizViewer({
           lastReportedSignatureRef.current = "";
         }
       });
-  }, [completedCount, questions, refreshEntryId, sessionId, submittedResults, total]);
+  }, [completedCount, graphContext, questions, refreshEntryId, sessionId, submittedResults, total]);
 
   const upsertSingleQuestion = useCallback(
     async (question: QuizQuestion, answer: AnswerState) => {

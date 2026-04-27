@@ -36,6 +36,10 @@ export interface QuizQuestion {
   difficulty?: string;
   concentration?: string;
   knowledge_context?: string;
+  graph_context?: {
+    course_id: string;
+    node_id: string;
+  };
 }
 
 export interface QuizFollowupContext {
@@ -69,6 +73,16 @@ export function extractQuizQuestions(
   const parsed: Array<QuizQuestion | null> = results.map((item) => {
     const qa = (item.qa_pair ?? item) as Record<string, unknown>;
     if (!qa.question) return null;
+    const graphContextRaw = resultMetadata.graph_context as Record<string, unknown> | undefined;
+    const graphContext =
+      graphContextRaw &&
+      typeof graphContextRaw.course_id === "string" &&
+      typeof graphContextRaw.node_id === "string"
+        ? {
+            course_id: graphContextRaw.course_id,
+            node_id: graphContextRaw.node_id,
+          }
+        : undefined;
     const question: QuizQuestion = {
       question_id: String(qa.question_id ?? ""),
       question: String(qa.question ?? ""),
@@ -85,6 +99,7 @@ export function extractQuizQuestions(
         qa.metadata.knowledge_context
           ? String(qa.metadata.knowledge_context)
           : undefined,
+      graph_context: graphContext,
     };
     return question;
   });

@@ -2,14 +2,28 @@ import { apiUrl } from "@/lib/api";
 
 export type NodeStatus = "explored" | "mastered";
 
+export interface DynamicKnowledgeGraphNode {
+  node_id: string;
+  title: string;
+  node_type: string;
+  dependencies: string[];
+}
+
+export interface NodeProgressSnapshot {
+  progress: Record<string, NodeStatus>;
+  current_node_id: string;
+  dynamic_nodes: DynamicKnowledgeGraphNode[];
+}
+
 export async function markNodeProgress(
   sessionId: string,
   courseId: string,
   nodeId: string,
   status: NodeStatus,
-): Promise<void> {
+  currentNodeId?: string,
+): Promise<boolean> {
   try {
-    await fetch(apiUrl("/api/v1/graph/node-progress"), {
+    const res = await fetch(apiUrl("/api/v1/graph/node-progress"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -17,25 +31,62 @@ export async function markNodeProgress(
         course_id: courseId,
         node_id: nodeId,
         status,
+        current_node_id: currentNodeId ?? nodeId,
       }),
     });
+    return res.ok;
   } catch {
-    // Silently fail — progress tracking is non-critical
+    return false;
+  }
+}
+
+export async function setCurrentGraphNode(
+  sessionId: string,
+  courseId: string,
+  nodeId: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl("/api/v1/graph/current-node"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        course_id: courseId,
+        node_id: nodeId,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
 export async function getNodeProgress(
   sessionId: string,
   courseId: string,
-): Promise<Record<string, NodeStatus>> {
+): Promise<NodeProgressSnapshot> {
   try {
     const res = await fetch(
       apiUrl(`/api/v1/graph/node-progress/${encodeURIComponent(courseId)}?session_id=${encodeURIComponent(sessionId)}`),
     );
-    if (!res.ok) return {};
+    if (!res.ok) {
+      return {
+        progress: {},
+        current_node_id: "",
+        dynamic_nodes: [],
+      };
+    }
     const data = await res.json();
-    return (data.progress ?? {}) as Record<string, NodeStatus>;
+    return {
+      progress: (data.progress ?? {}) as Record<string, NodeStatus>,
+      current_node_id: String(data.current_node_id ?? ""),
+      dynamic_nodes: (data.dynamic_nodes ?? []) as DynamicKnowledgeGraphNode[],
+    };
   } catch {
-    return {};
+    return {
+      progress: {},
+      current_node_id: "",
+      dynamic_nodes: [],
+    };
   }
 }

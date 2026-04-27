@@ -44,6 +44,7 @@ class QuizResultItem(BaseModel):
 
 class QuizResultsRequest(BaseModel):
     answers: list[QuizResultItem] = Field(default_factory=list)
+    graph_context: dict[str, str] | None = None
 
 
 def _format_quiz_results_message(answers: list[QuizResultItem]) -> str:
@@ -125,10 +126,33 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
         )
     except Exception:
         logger.warning("Failed to upsert notebook entries for session %s", session_id, exc_info=True)
+    graph_updated = False
+    graph_context = payload.graph_context or {}
+    course_id = str(graph_context.get("course_id", "") or "").strip()
+    node_id = str(graph_context.get("node_id", "") or "").strip()
+    if course_id and node_id:
+        try:
+            correct = sum(1 for item in payload.answers if item.is_correct)
+            score_ratio = (correct / len(payload.answers)) if payload.answers else 0.0
+            graph_updated = await store.record_graph_quiz_outcome(
+                session_id,
+                course_id,
+                node_id,
+                score_ratio,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to update graph quiz outcome for session %s course %s node %s",
+                session_id,
+                course_id,
+                node_id,
+                exc_info=True,
+            )
     return {
         "recorded": True,
         "session_id": session_id,
         "answer_count": len(payload.answers),
         "notebook_count": notebook_count,
         "content": content,
+        "graph_updated": graph_updated,
     }

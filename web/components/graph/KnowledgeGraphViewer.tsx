@@ -14,7 +14,13 @@ import {
 import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
 import { KNOWLEDGE_GRAPH_COPY } from "@/lib/knowledge-graph-copy";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
-import { getNodeProgress, markNodeProgress, type NodeStatus } from "@/lib/node-progress-api";
+import {
+  getNodeProgress,
+  markNodeProgress,
+  setCurrentGraphNode,
+  type DynamicKnowledgeGraphNode,
+  type NodeStatus,
+} from "@/lib/node-progress-api";
 import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
 import { describeGraphRecommendation } from "@/lib/graph-recommendation-ui";
 import {
@@ -23,6 +29,10 @@ import {
   readStoredKnowledgeGraphProgress,
   writeStoredKnowledgeGraphProgress,
 } from "@/lib/knowledge-graph-progress";
+import {
+  readStoredKnowledgeGraphState,
+  writeStoredKnowledgeGraphState,
+} from "@/lib/knowledge-graph-state";
 
 const DEFAULT_NODES: Node[] = [
   { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
@@ -33,20 +43,28 @@ const DEFAULT_EDGES: Edge[] = [
   { id: "e1-2", source: "1", target: "2" },
 ];
 
-interface DynamicNode {
-  node_id: string;
-  title: string;
-  node_type: string;
-  dependencies: string[];
-}
-
 interface GraphStatePayload {
   current_node_id: string;
   mastered_nodes: string[];
-  dynamic_nodes: DynamicNode[];
+  dynamic_nodes: DynamicKnowledgeGraphNode[];
 }
 
 function styleNodeForProgress(node: Node, status?: NodeStatus): Node {
+  const graphState = (node.data as Record<string, unknown>).graphState as string | undefined;
+
+  if (graphState === "locked") {
+    return node;
+  }
+  if (graphState === "in_progress") {
+    return {
+      ...node,
+      style: {
+        ...node.style,
+        border: "2px solid #0ea5e9",
+        boxShadow: "0 0 0 4px rgba(14, 165, 233, 0.14)",
+      },
+    };
+  }
   if (status === "mastered") {
     return {
       ...node,
@@ -81,12 +99,36 @@ export default function KnowledgeGraphViewer({
 }) {
   const [nodes, setNodes] = useState<Node[]>(DEFAULT_NODES);
   const [edges, setEdges] = useState<Edge[]>(DEFAULT_EDGES);
+  const [graphTemplate, setGraphTemplate] = useState<{ nodes?: any[]; edges?: any[]; [key: string]: unknown } | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
+  const [currentNodeId, setCurrentNodeId] = useState<string>("");
+  const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const persistRuntimeState = useCallback((nextCurrentNodeId: string, nextDynamicNodes: DynamicKnowledgeGraphNode[]) => {
+    if (!courseId) return;
+    writeStoredKnowledgeGraphState(courseId, {
+      currentNodeId: nextCurrentNodeId,
+      dynamicNodes: nextDynamicNodes,
+    });
+  }, [courseId]);
+
+  const refreshRecommendation = useCallback(async (
+    targetCourseId?: string | null,
+  ): Promise<GraphRecommendation | null> => {
+    const resolvedCourseId = targetCourseId ?? courseId;
+    if (!sessionId || !resolvedCourseId) {
+      setRecommendation(null);
+      return null;
+    }
+    const nextRecommendation = await getGraphRecommendation(sessionId, resolvedCourseId);
+    setRecommendation(nextRecommendation);
+    return nextRecommendation;
+  }, [courseId, sessionId]);
 
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode({
@@ -95,8 +137,20 @@ export default function KnowledgeGraphViewer({
       description: (node.data as Record<string, unknown>).description as string || "",
       nodeType: (node.data as Record<string, unknown>).nodeType as string || "topic",
       difficulty: (node.data as Record<string, unknown>).difficulty as string || "medium",
+      courseId: courseId ?? undefined,
+      graphState: (node.data as Record<string, unknown>).graphState as string | undefined,
+      hasUnmetPrerequisites: Boolean((node.data as Record<string, unknown>).hasUnmetPrerequisites),
     });
-  }, []);
+    setCurrentNodeId(node.id);
+    persistRuntimeState(node.id, dynamicNodes);
+    if (sessionId && courseId) {
+      void setCurrentGraphNode(sessionId, courseId, node.id).then((ok) => {
+        if (ok) {
+          void refreshRecommendation(courseId);
+        }
+      });
+    }
+  }, [courseId, dynamicNodes, persistRuntimeState, refreshRecommendation, sessionId]);
 
   const handleJumpToRecommended = useCallback((nodeId: string) => {
     const target = nodes.find((node) => node.id === nodeId);
@@ -107,16 +161,67 @@ export default function KnowledgeGraphViewer({
       description: (target.data as Record<string, unknown>).description as string || "",
       nodeType: (target.data as Record<string, unknown>).nodeType as string || "topic",
       difficulty: (target.data as Record<string, unknown>).difficulty as string || "medium",
+      courseId: courseId ?? undefined,
+      graphState: (target.data as Record<string, unknown>).graphState as string | undefined,
+      hasUnmetPrerequisites: Boolean((target.data as Record<string, unknown>).hasUnmetPrerequisites),
     });
   }, [nodes]);
 
   const applyCourseTemplate = useCallback((
-    data: { nodes?: any[]; edges?: any[] },
+    data: { nodes?: any[]; edges?: any[]; [key: string]: unknown },
     currentProgress: Record<string, NodeStatus>,
+    runtimeState: { currentNodeId: string; dynamicNodes: DynamicKnowledgeGraphNode[] },
     recommendedNodeId?: string | null,
   ) => {
     if (!data || !data.nodes) return;
-    const flow = mapCourseKnowledgeGraphToFlow(data as any, { recommendedNodeId });
+    const mergedNodes = [...data.nodes];
+    const mergedEdges = [...(data.edges ?? [])];
+    const existingNodeIds = new Set(mergedNodes.map((node) => String(node.node_id ?? "")).filter(Boolean));
+    const existingEdgeIds = new Set(mergedEdges.map((edge) => String(edge.edge_id ?? "")).filter(Boolean));
+
+    runtimeState.dynamicNodes.forEach((dynNode) => {
+      if (!existingNodeIds.has(dynNode.node_id)) {
+        mergedNodes.push({
+          node_id: dynNode.node_id,
+          title: dynNode.title,
+          node_type: "topic",
+          description: "Nút phụ trợ được sinh ra từ tiến trình học hiện tại.",
+          difficulty: "medium",
+          learning_outcomes: [],
+          examples: [],
+          related_questions: [],
+          resources: [],
+          source_refs: [],
+        });
+      }
+
+      dynNode.dependencies?.forEach((depId) => {
+        const edgeId = `dynamic-${depId}-${dynNode.node_id}`;
+        if (existingEdgeIds.has(edgeId)) return;
+        mergedEdges.push({
+          edge_id: edgeId,
+          source: depId,
+          target: dynNode.node_id,
+          relation_type: "related_to",
+          confidence: 1,
+          rationale: "",
+          source_refs: [],
+        });
+      });
+    });
+
+    const flow = mapCourseKnowledgeGraphToFlow(
+      {
+        ...(data as any),
+        nodes: mergedNodes,
+        edges: mergedEdges,
+      },
+      {
+        recommendedNodeId,
+        currentNodeId: runtimeState.currentNodeId,
+        progressMap: currentProgress,
+      },
+    );
     const styledNodes = flow.nodes.map((node) => styleNodeForProgress(node, currentProgress[node.id]));
 
     setNodes(styledNodes);
@@ -141,9 +246,29 @@ export default function KnowledgeGraphViewer({
     )));
 
     if (opts?.persistRemote !== false && sessionId) {
-      void markNodeProgress(sessionId, courseId, nodeId, status);
+      void markNodeProgress(
+        sessionId,
+        courseId,
+        nodeId,
+        status,
+        currentNodeId || nodeId,
+      ).then((ok) => {
+        if (ok) {
+          const persisted = readStoredKnowledgeGraphProgress(courseId);
+          if (persisted[nodeId] === status) {
+            const nextPersisted = { ...persisted };
+            delete nextPersisted[nodeId];
+            if (Object.keys(nextPersisted).length) {
+              writeStoredKnowledgeGraphProgress(courseId, nextPersisted);
+            } else {
+              clearStoredKnowledgeGraphProgress(courseId);
+            }
+          }
+          void refreshRecommendation(courseId);
+        }
+      });
     }
-  }, [courseId, sessionId]);
+  }, [courseId, currentNodeId, refreshRecommendation, sessionId]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -230,6 +355,7 @@ export default function KnowledgeGraphViewer({
 
       if (!resolvedCourseId) {
         setCourseId(null);
+        setGraphTemplate(null);
         setNodes(DEFAULT_NODES);
         setEdges(DEFAULT_EDGES);
         return;
@@ -256,39 +382,81 @@ export default function KnowledgeGraphViewer({
     });
     const progressPromise = shouldLoadProgress && sessionId
       ? getNodeProgress(sessionId, courseId)
-      : Promise.resolve({});
+      : Promise.resolve({ progress: {}, current_node_id: "", dynamic_nodes: [] });
     const recommendationPromise = shouldLoadProgress && sessionId
       ? getGraphRecommendation(sessionId, courseId)
       : Promise.resolve(null);
 
     Promise.all([templatePromise, progressPromise, recommendationPromise])
-      .then(([templateData, progressData, recommendationData]) => {
+      .then(([templateData, progressSnapshot, recommendationData]) => {
+        const storedRuntimeState = readStoredKnowledgeGraphState(courseId);
         const mergedProgress = mergeKnowledgeGraphProgress(
-          progressData as Record<string, NodeStatus>,
+          progressSnapshot.progress,
           readStoredKnowledgeGraphProgress(courseId),
         );
+        const mergedRuntimeState = {
+          currentNodeId: progressSnapshot.current_node_id || storedRuntimeState.currentNodeId,
+          dynamicNodes: progressSnapshot.dynamic_nodes.length
+            ? progressSnapshot.dynamic_nodes
+            : storedRuntimeState.dynamicNodes,
+        };
+        setGraphTemplate(templateData);
         setProgressMap(mergedProgress);
+        setCurrentNodeId(mergedRuntimeState.currentNodeId);
+        setDynamicNodes(mergedRuntimeState.dynamicNodes);
+        persistRuntimeState(mergedRuntimeState.currentNodeId, mergedRuntimeState.dynamicNodes);
         setRecommendation(recommendationData);
-        applyCourseTemplate(
-          templateData,
-          mergedProgress,
-          recommendationData?.recommended_node_id ?? null,
-        );
       })
       .catch(console.error);
-  }, [courseId, sessionId, applyCourseTemplate]);
+  }, [courseId, persistRuntimeState, sessionId]);
+
+  useEffect(() => {
+    if (!graphTemplate?.nodes) return;
+    applyCourseTemplate(
+      graphTemplate,
+      progressMap,
+      { currentNodeId, dynamicNodes },
+      recommendation?.recommended_node_id ?? null,
+    );
+  }, [applyCourseTemplate, currentNodeId, dynamicNodes, graphTemplate, progressMap, recommendation]);
 
   useEffect(() => {
     if (!sessionId || !courseId) return;
 
-    const pendingProgress = readStoredKnowledgeGraphProgress(courseId);
-    const entries = Object.entries(pendingProgress);
-    if (!entries.length) return;
+    let cancelled = false;
 
-    entries.forEach(([nodeId, status]) => {
-      void markNodeProgress(sessionId, courseId, nodeId, status);
-    });
-    clearStoredKnowledgeGraphProgress(courseId);
+    async function flushPendingProgress() {
+      const pendingProgress = readStoredKnowledgeGraphProgress(courseId);
+      const entries = Object.entries(pendingProgress);
+      if (!entries.length) return;
+
+      const failed: Record<string, NodeStatus> = {};
+      for (const [nodeId, status] of entries) {
+        const ok = await markNodeProgress(
+          sessionId,
+          courseId,
+          nodeId,
+          status,
+          readStoredKnowledgeGraphState(courseId).currentNodeId || currentNodeId || nodeId,
+        );
+        if (!ok) {
+          failed[nodeId] = status;
+        }
+      }
+
+      if (cancelled) return;
+      if (Object.keys(failed).length) {
+        writeStoredKnowledgeGraphProgress(courseId, failed);
+      } else {
+        clearStoredKnowledgeGraphProgress(courseId);
+      }
+    }
+
+    void flushPendingProgress();
+
+    return () => {
+      cancelled = true;
+    };
   }, [courseId, sessionId]);
 
   useEffect(() => {
@@ -300,43 +468,14 @@ export default function KnowledgeGraphViewer({
       if (event.type === "result" && event.metadata?.event_type === "graph_updated") {
         const state = event.metadata.state as GraphStatePayload;
         if (!state) return;
-        
-        setNodes(prevNodes => {
-          const newNodes = [...prevNodes];
-          state.dynamic_nodes?.forEach((dynNode, idx: number) => {
-            const sqId = dynNode.node_id;
-            if (!newNodes.find(n => n.id === sqId)) {
-              newNodes.push({
-                id: sqId,
-                position: { x: 450, y: 125 + (idx * 100) }, 
-                data: { label: dynNode.title },
-                type: "default",
-                style: { border: "2px solid red", borderRadius: "8px", padding: "10px" }
-              });
-            }
-          });
-          return newNodes;
-        });
 
-        setEdges(prevEdges => {
-          const newEdges = [...prevEdges];
-          state.dynamic_nodes?.forEach((dynNode) => {
-            const sqId = dynNode.node_id;
-            dynNode.dependencies?.forEach((depId: string) => {
-              const edgeId = `e-${depId}-${sqId}`;
-              if (!newEdges.find(e => e.id === edgeId)) {
-                newEdges.push({
-                  id: edgeId,
-                  source: depId,
-                  target: sqId,
-                  animated: true,
-                  style: { stroke: "red", strokeWidth: 2 }
-                });
-              }
-            });
-          });
-          return newEdges;
-        });
+        const nextCurrentNodeId = state.current_node_id || currentNodeId;
+        setCurrentNodeId(nextCurrentNodeId);
+        setDynamicNodes(state.dynamic_nodes ?? []);
+        persistRuntimeState(nextCurrentNodeId, state.dynamic_nodes ?? []);
+        if (courseId) {
+          void refreshRecommendation(courseId);
+        }
       }
     });
 
@@ -353,7 +492,36 @@ export default function KnowledgeGraphViewer({
       isConnected = false;
       client.disconnect();
     };
-  }, [sessionId]);
+  }, [courseId, currentNodeId, persistRuntimeState, refreshRecommendation, sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !sessionId || !courseId) return;
+
+    const handleGraphQuizUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ course_id?: string; node_id?: string }>).detail;
+      if (!detail || detail.course_id !== courseId) return;
+
+      void getNodeProgress(sessionId, courseId).then((progressSnapshot) => {
+        const mergedProgress = mergeKnowledgeGraphProgress(
+          progressSnapshot.progress,
+          readStoredKnowledgeGraphProgress(courseId),
+        );
+        setProgressMap(mergedProgress);
+        setCurrentNodeId(progressSnapshot.current_node_id || detail.node_id || "");
+        setDynamicNodes(progressSnapshot.dynamic_nodes ?? []);
+        persistRuntimeState(
+          progressSnapshot.current_node_id || detail.node_id || "",
+          progressSnapshot.dynamic_nodes ?? [],
+        );
+      });
+      void refreshRecommendation(courseId);
+    };
+
+    window.addEventListener("deeptutor:graph-quiz-updated", handleGraphQuizUpdated as EventListener);
+    return () => {
+      window.removeEventListener("deeptutor:graph-quiz-updated", handleGraphQuizUpdated as EventListener);
+    };
+  }, [courseId, persistRuntimeState, refreshRecommendation, sessionId]);
 
   return (
     <div className="w-full h-full bg-slate-50 relative">
@@ -399,12 +567,16 @@ export default function KnowledgeGraphViewer({
         onJumpToRecommended={handleJumpToRecommended}
         onAskAbout={(n) => {
           setSelectedNode(null);
+          setCurrentNodeId(n.id);
+          persistRuntimeState(n.id, dynamicNodes);
           updateNodeProgress(n.id, "explored");
           onAskAbout?.(n);
         }}
         onQuizNode={(n) => {
           setSelectedNode(null);
-          updateNodeProgress(n.id, "mastered");
+          setCurrentNodeId(n.id);
+          persistRuntimeState(n.id, dynamicNodes);
+          updateNodeProgress(n.id, "explored");
           onQuizNode?.(n);
         }}
       />

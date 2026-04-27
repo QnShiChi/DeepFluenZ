@@ -11,6 +11,7 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB
       description: "Học phần cung cấp kiến thức nền tảng.",
       nodeType: "topic",
       difficulty: "medium",
+      courseId: "intro-ai",
     },
     {
       language: "vi",
@@ -24,6 +25,10 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB
     difficulty: "medium",
     question_type: "",
     preference: "",
+    graph_context: {
+      course_id: "intro-ai",
+      node_id: "topic_intro",
+    },
   });
   assert.equal(request.options.requestSnapshotOverride?.capability, "deep_question");
   assert.deepEqual(request.options.requestSnapshotOverride?.enabledTools, []);

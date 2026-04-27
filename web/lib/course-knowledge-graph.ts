@@ -29,6 +29,13 @@ export interface CourseKnowledgeGraph {
   };
 }
 
+export type GraphNodeProgressState =
+  | "mastered"
+  | "explored"
+  | "in_progress"
+  | "locked"
+  | "available";
+
 function ensureUniqueId(
   baseId: string | null | undefined,
   seenIds: Set<string>,
@@ -51,15 +58,57 @@ function ensureUniqueId(
 
 export function mapCourseKnowledgeGraphToFlow(
   graph: CourseKnowledgeGraph,
-  options?: { recommendedNodeId?: string | null },
+  options?: {
+    recommendedNodeId?: string | null;
+    currentNodeId?: string | null;
+    progressMap?: Record<string, "explored" | "mastered">;
+  },
 ) {
   const seenNodeIds = new Set<string>();
   const seenEdgeIds = new Set<string>();
   const recommendedNodeId = options?.recommendedNodeId ?? null;
+  const currentNodeId = options?.currentNodeId ?? null;
+  const progressMap = options?.progressMap ?? {};
+  const prerequisites = new Map<string, Set<string>>();
+
+  for (const edge of graph.edges) {
+    if (edge.relation_type !== "prerequisite") continue;
+    const current = prerequisites.get(edge.target) ?? new Set<string>();
+    current.add(edge.source);
+    prerequisites.set(edge.target, current);
+  }
 
   const nodes = graph.nodes.map((node, index) => {
     const id = ensureUniqueId(node.node_id, seenNodeIds, "node", index);
     const isRecommended = id === recommendedNodeId;
+    const status = progressMap[id];
+    const prereqIds = prerequisites.get(id) ?? new Set<string>();
+    const hasUnmetPrerequisites = [...prereqIds].some((prereqId) => progressMap[prereqId] !== "mastered");
+    const graphState: GraphNodeProgressState =
+      status === "mastered"
+        ? "mastered"
+        : currentNodeId === id
+          ? "in_progress"
+          : status === "explored"
+            ? "explored"
+            : hasUnmetPrerequisites
+              ? "locked"
+              : "available";
+
+    const baseStyle =
+      graphState === "locked"
+        ? {
+            opacity: 0.55,
+            background: "#e5e7eb",
+            color: "#64748b",
+          }
+        : graphState === "in_progress"
+          ? {
+              border: "2px solid #0ea5e9",
+              boxShadow: "0 0 0 4px rgba(14, 165, 233, 0.14)",
+            }
+          : undefined;
+
     return {
       id,
       position: {
@@ -72,14 +121,17 @@ export function mapCourseKnowledgeGraphToFlow(
         nodeType: node.node_type,
         difficulty: node.difficulty ?? "medium",
         isRecommended,
+        graphState,
+        hasUnmetPrerequisites,
       },
       type: "default",
       style: isRecommended
         ? {
+            ...baseStyle,
             border: "3px solid #3b82f6",
             boxShadow: "0 0 0 4px rgba(59, 130, 246, 0.15)",
           }
-        : undefined,
+        : baseStyle,
     };
   });
 

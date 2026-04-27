@@ -228,6 +228,7 @@ class SQLiteSessionStore:
                     current_node_id TEXT DEFAULT '',
                     mastered_nodes_json TEXT DEFAULT '[]',
                     dynamic_nodes_json TEXT DEFAULT '[]',
+                    weak_nodes_json TEXT DEFAULT '[]',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (session_id, subject_id)
@@ -243,6 +244,10 @@ class SQLiteSessionStore:
             if "explored_nodes_json" not in graph_cols:
                 conn.execute(
                     "ALTER TABLE student_graph_states ADD COLUMN explored_nodes_json TEXT DEFAULT '[]'"
+                )
+            if "weak_nodes_json" not in graph_cols:
+                conn.execute(
+                    "ALTER TABLE student_graph_states ADD COLUMN weak_nodes_json TEXT DEFAULT '[]'"
                 )
             conn.commit()
 
@@ -1389,18 +1394,31 @@ class SQLiteSessionStore:
         mastered_nodes_json = _json_dumps(state_dict.get("mastered_nodes", []))
         dynamic_nodes_json = _json_dumps(state_dict.get("dynamic_nodes", []))
         explored_nodes_json = _json_dumps(state_dict.get("explored_nodes", []))
+        weak_nodes_json = _json_dumps(state_dict.get("weak_node_ids", []))
         
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id, 
-                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json,
+                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
                 """,
-                (session_id, subject_id, current_node_id, mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, session_id, subject_id, now, now)
+                (
+                    session_id,
+                    subject_id,
+                    current_node_id,
+                    mastered_nodes_json,
+                    dynamic_nodes_json,
+                    explored_nodes_json,
+                    weak_nodes_json,
+                    session_id,
+                    subject_id,
+                    now,
+                    now,
+                )
             )
             conn.commit()
         return cur.rowcount > 0
@@ -1420,25 +1438,49 @@ class SQLiteSessionStore:
         payload["mastered_nodes"] = _json_loads(payload.pop("mastered_nodes_json", ""), [])
         payload["dynamic_nodes"] = _json_loads(payload.pop("dynamic_nodes_json", ""), [])
         payload["explored_nodes"] = _json_loads(payload.pop("explored_nodes_json", ""), [])
+        payload["weak_node_ids"] = _json_loads(payload.pop("weak_nodes_json", ""), [])
         return payload
 
     async def get_student_state(self, session_id: str, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_student_state_sync, session_id, subject_id)
 
-    def _mark_node_progress_sync(self, session_id: str, subject_id: str, node_id: str, status: str) -> bool:
+    def _mark_node_progress_sync(
+        self,
+        session_id: str,
+        subject_id: str,
+        node_id: str,
+        status: str,
+        current_node_id: str | None = None,
+    ) -> bool:
         """Mark a node as 'explored' or 'mastered'. Mastered supersedes explored."""
         now = time.time()
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT mastered_nodes_json, explored_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?",
+                """
+                SELECT current_node_id, mastered_nodes_json, explored_nodes_json, weak_nodes_json
+                FROM student_graph_states
+                WHERE session_id = ? AND subject_id = ?
+                """,
                 (session_id, subject_id),
             ).fetchone()
             if row:
+                existing_current_node_id = row["current_node_id"] or ""
                 mastered = _json_loads(row["mastered_nodes_json"], [])
                 explored = _json_loads(row["explored_nodes_json"], [])
+                weak_node_ids = _json_loads(row["weak_nodes_json"], [])
             else:
+                existing_current_node_id = ""
                 mastered = []
                 explored = []
+                weak_node_ids = []
+
+            resolved_current_node_id = (
+                current_node_id.strip()
+                if isinstance(current_node_id, str) and current_node_id.strip()
+                else node_id
+                if node_id.strip()
+                else existing_current_node_id
+            )
 
             if status == "mastered":
                 if node_id not in mastered:
@@ -1455,24 +1497,133 @@ class SQLiteSessionStore:
                 """
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id,
-                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json,
+                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
                     created_at, updated_at
                 )
                 VALUES (
-                    ?, ?, COALESCE((SELECT current_node_id FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
-                    ?, COALESCE((SELECT dynamic_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'), ?,
+                    ?, ?, ?,
+                    ?, COALESCE((SELECT dynamic_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'), ?, ?,
                     COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?
                 )
                 """,
-                (session_id, subject_id, session_id, subject_id,
-                 _json_dumps(mastered), session_id, subject_id, _json_dumps(explored),
+                (session_id, subject_id, resolved_current_node_id,
+                 _json_dumps(mastered), session_id, subject_id, _json_dumps(explored), _json_dumps(weak_node_ids),
                  session_id, subject_id, now, now),
             )
             conn.commit()
         return True
 
-    async def mark_node_progress(self, session_id: str, subject_id: str, node_id: str, status: str) -> bool:
-        return await self._run(self._mark_node_progress_sync, session_id, subject_id, node_id, status)
+    async def mark_node_progress(
+        self,
+        session_id: str,
+        subject_id: str,
+        node_id: str,
+        status: str,
+        current_node_id: str | None = None,
+    ) -> bool:
+        return await self._run(
+            self._mark_node_progress_sync,
+            session_id,
+            subject_id,
+            node_id,
+            status,
+            current_node_id,
+        )
+
+    def _set_current_graph_node_sync(self, session_id: str, subject_id: str, node_id: str) -> bool:
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO student_graph_states (
+                    session_id, subject_id, current_node_id,
+                    mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
+                    created_at, updated_at
+                )
+                VALUES (
+                    ?, ?, ?,
+                    COALESCE((SELECT mastered_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'),
+                    COALESCE((SELECT dynamic_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'),
+                    COALESCE((SELECT explored_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'),
+                    COALESCE((SELECT weak_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'),
+                    COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?
+                )
+                """,
+                (
+                    session_id,
+                    subject_id,
+                    node_id,
+                    session_id,
+                    subject_id,
+                    session_id,
+                    subject_id,
+                    session_id,
+                    subject_id,
+                    session_id,
+                    subject_id,
+                    session_id,
+                    subject_id,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        return True
+
+    async def set_current_graph_node(self, session_id: str, subject_id: str, node_id: str) -> bool:
+        return await self._run(self._set_current_graph_node_sync, session_id, subject_id, node_id)
+
+    def _record_graph_quiz_outcome_sync(
+        self,
+        session_id: str,
+        subject_id: str,
+        node_id: str,
+        score_ratio: float,
+        mastery_threshold: float = 0.7,
+    ) -> bool:
+        state = self._get_student_state_sync(session_id, subject_id) or {
+            "current_node_id": "",
+            "mastered_nodes": [],
+            "explored_nodes": [],
+            "dynamic_nodes": [],
+            "weak_node_ids": [],
+        }
+        mastered = set(state.get("mastered_nodes", []) or [])
+        explored = set(state.get("explored_nodes", []) or [])
+        weak_node_ids = set(state.get("weak_node_ids", []) or [])
+
+        explored.add(node_id)
+        state["current_node_id"] = node_id
+
+        if score_ratio >= mastery_threshold:
+            mastered.add(node_id)
+            weak_node_ids.discard(node_id)
+            explored.discard(node_id)
+        else:
+            mastered.discard(node_id)
+            weak_node_ids.add(node_id)
+
+        state["mastered_nodes"] = sorted(mastered)
+        state["explored_nodes"] = sorted(explored)
+        state["weak_node_ids"] = sorted(weak_node_ids)
+        return self._upsert_student_state_sync(session_id, subject_id, state)
+
+    async def record_graph_quiz_outcome(
+        self,
+        session_id: str,
+        subject_id: str,
+        node_id: str,
+        score_ratio: float,
+        mastery_threshold: float = 0.7,
+    ) -> bool:
+        return await self._run(
+            self._record_graph_quiz_outcome_sync,
+            session_id,
+            subject_id,
+            node_id,
+            score_ratio,
+            mastery_threshold,
+        )
 
     def _get_node_progress_sync(self, session_id: str, subject_id: str) -> dict[str, str]:
         """Return {node_id: 'explored'|'mastered'} for all tracked nodes."""

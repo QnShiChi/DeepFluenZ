@@ -84,6 +84,11 @@ export interface QuizResultItem {
   is_correct: boolean;
 }
 
+export interface GraphQuizContext {
+  course_id: string;
+  node_id: string;
+}
+
 export interface SessionExamAttemptSummary {
   attempt_id: string;
   exam_id: string;
@@ -159,11 +164,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
 export async function recordQuizResults(
   sessionId: string,
   answers: QuizResultItem[],
+  graphContext?: GraphQuizContext | null,
 ): Promise<void> {
   const response = await fetch(apiUrl(`/api/v1/sessions/${sessionId}/quiz-results`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({
+      answers,
+      ...(graphContext ? { graph_context: graphContext } : {}),
+    }),
   });
   await expectJson<{ recorded: boolean }>(response);
 }

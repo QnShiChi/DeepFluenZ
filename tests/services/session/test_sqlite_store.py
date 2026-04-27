@@ -138,6 +138,69 @@ def test_course_template_round_trips_import_report(store: SQLiteSessionStore) ->
     assert "backbone_only" in stored["template_json"]
 
 
+def test_mark_node_progress_updates_current_node_and_preserves_dynamic_nodes(
+    store: SQLiteSessionStore,
+) -> None:
+    session = asyncio.run(store.create_session(title="Graph Session"))
+    asyncio.run(
+        store.upsert_course_template(
+            "intro-ai",
+            json.dumps(
+                {
+                    "course_id": "intro-ai",
+                    "title": "Intro to AI",
+                    "source_type": "manual_json",
+                    "nodes": [],
+                    "edges": [],
+                    "audit": {
+                        "backbone_node_ids": [],
+                        "enriched_node_ids": [],
+                        "backbone_edge_ids": [],
+                        "enriched_edge_ids": [],
+                        "warnings": [],
+                    },
+                }
+            ),
+        )
+    )
+    asyncio.run(
+        store.upsert_student_state(
+            session["id"],
+            "intro-ai",
+            {
+                "current_node_id": "topic_intro",
+                "mastered_nodes": [],
+                "explored_nodes": [],
+                "dynamic_nodes": [
+                    {
+                        "node_id": "sq_review_intro",
+                        "title": "Review Intro",
+                        "node_type": "SIDE_QUEST",
+                        "dependencies": ["topic_intro"],
+                    }
+                ],
+            },
+        )
+    )
+
+    asyncio.run(
+        store.mark_node_progress(
+            session["id"],
+            "intro-ai",
+            "topic_search",
+            "explored",
+            current_node_id="topic_search",
+        )
+    )
+
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+
+    assert state is not None
+    assert state["current_node_id"] == "topic_search"
+    assert state["explored_nodes"] == ["topic_search"]
+    assert state["dynamic_nodes"][0]["node_id"] == "sq_review_intro"
+
+
 # ── Notebook entries ──────────────────────────────────────────────
 
 def test_upsert_notebook_entries_persists_all(store: SQLiteSessionStore) -> None:

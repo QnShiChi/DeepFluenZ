@@ -13,6 +13,9 @@ export interface SelectedNodeData {
   description: string;
   nodeType: string;
   difficulty: string;
+  courseId?: string;
+  graphState?: string;
+  hasUnmetPrerequisites?: boolean;
 }
 
 interface NodeDetailPanelProps {
@@ -95,6 +98,16 @@ export default function NodeDetailPanel({
                 <CheckCircle2 className="w-3 h-3" />
                 <span>Thuần thục</span>
               </span>
+            ) : node.graphState === "in_progress" ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-sky-100 text-sky-700 border border-sky-200">
+                <CircleDashed className="w-3 h-3" />
+                <span>Đang học</span>
+              </span>
+            ) : node.graphState === "locked" ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                <CircleDashed className="w-3 h-3" />
+                <span>Chưa mở khóa</span>
+              </span>
             ) : progressStatus === "explored" ? (
               <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                 <CircleDashed className="w-3 h-3" />
@@ -135,6 +148,11 @@ export default function NodeDetailPanel({
             >
               {KNOWLEDGE_GRAPH_COPY.recommendedNodeCta}
             </button>
+          </div>
+        ) : null}
+        {node.hasUnmetPrerequisites ? (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            Nút này còn thiếu kiến thức tiên quyết. Bạn vẫn có thể xem trước, nhưng nên hoàn thành các nút nền tảng trước để đi đúng lộ trình.
           </div>
         ) : null}
         {node.description ? (

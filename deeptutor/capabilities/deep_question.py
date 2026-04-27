@@ -183,6 +183,9 @@ class DeepQuestionCapability(BaseCapability):
             "summary": result,
             "mode": mode,
         }
+        graph_context = overrides.get("graph_context")
+        if isinstance(graph_context, dict):
+            result_payload["graph_context"] = graph_context
         cost_meta = self._collect_cost_summary("question")
         if cost_meta:
             result_payload["metadata"] = {"cost_summary": cost_meta}

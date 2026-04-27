@@ -7,6 +7,7 @@ export interface KnowledgeGraphNodeActionInput {
   description: string;
   nodeType: string;
   difficulty: string;
+  courseId?: string;
 }
 
 interface BuildKnowledgeGraphQuizMessageContext {
@@ -28,6 +29,18 @@ export function buildKnowledgeGraphQuizMessage(
     num_questions: 3,
     difficulty: node.difficulty || "medium",
   });
+  const graphContext = node.courseId
+    ? {
+        course_id: node.courseId,
+        node_id: node.id,
+      }
+    : undefined;
+  const finalConfig = graphContext
+    ? {
+        ...config,
+        graph_context: graphContext,
+      }
+    : config;
 
   const requestSnapshot: MessageRequestSnapshot = {
     content: node.title,
@@ -35,12 +48,12 @@ export function buildKnowledgeGraphQuizMessage(
     enabledTools: [],
     knowledgeBases: [],
     language: context.language,
-    config,
+    config: finalConfig,
   };
 
   return {
     content: node.title,
-    config,
+    config: finalConfig,
     options: {
       requestSnapshotOverride: requestSnapshot,
     },
