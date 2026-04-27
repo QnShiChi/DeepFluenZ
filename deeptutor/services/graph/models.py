@@ -47,6 +47,14 @@ Difficulty = Literal["easy", "medium", "hard"]
 SourceType = Literal["syllabus_pdf", "syllabus_text", "manual_json"]
 ImportStatus = Literal["backbone_only", "enriched"]
 ResourceKind = Literal["reading", "video", "exercise", "reference"]
+RecommendationMode = Literal["advance", "review", "remediate"]
+RecommendationReasonCode = Literal[
+    "prerequisites_ready",
+    "high_unlock_value",
+    "close_to_current_path",
+    "recent_quiz_weakness",
+    "needs_review_before_advance",
+]
 
 
 class SourceRef(BaseModel):
@@ -124,3 +132,13 @@ class CourseKnowledgeGraph(BaseModel):
     edges: list[KnowledgeGraphEdge] = Field(default_factory=list)
     audit: GraphAudit
     import_report: ImportReport | None = None
+
+
+class GraphRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommended_node_id: str
+    mode: RecommendationMode
+    score: float = Field(ge=0.0, le=1.0)
+    reason_codes: list[RecommendationReasonCode] = Field(default_factory=list)
+    backup_node_ids: list[str] = Field(default_factory=list)
