@@ -11,7 +11,6 @@ export interface KnowledgeGraphNodeActionInput {
 
 interface BuildKnowledgeGraphQuizMessageContext {
   language: string;
-  knowledgeBases: string[];
 }
 
 export function buildKnowledgeGraphQuizMessage(
@@ -33,8 +32,8 @@ export function buildKnowledgeGraphQuizMessage(
   const requestSnapshot: MessageRequestSnapshot = {
     content: node.title,
     capability: "deep_question",
-    enabledTools: ["rag", "web_search", "code_execution"],
-    knowledgeBases: [...context.knowledgeBases],
+    enabledTools: [],
+    knowledgeBases: [],
     language: context.language,
     config,
   };

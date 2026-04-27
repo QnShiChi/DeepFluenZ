@@ -12,8 +12,8 @@ test("describeGraphRecommendation formats remediation copy", () => {
     backup_node_ids: ["topic_history"],
   });
 
-  assert.equal(summary.badge, "Review first");
-  assert.match(summary.message, /quiz/i);
+  assert.equal(summary.badge, "Ôn lại trước");
+  assert.match(summary.message, /bài quiz|kiểm tra/i);
 });
 
 test("describeGraphRecommendation formats advance copy", () => {
@@ -25,6 +25,6 @@ test("describeGraphRecommendation formats advance copy", () => {
     backup_node_ids: [],
   });
 
-  assert.equal(summary.badge, "Next");
-  assert.match(summary.message, /prerequisite/i);
+  assert.equal(summary.badge, "Tiếp theo");
+  assert.match(summary.message, /tiên quyết|lộ trình/i);
 });

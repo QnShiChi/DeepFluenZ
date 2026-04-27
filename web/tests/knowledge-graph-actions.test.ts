@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildKnowledgeGraphQuizMessage } from "../lib/knowledge-graph-actions.ts";
 
-test("buildKnowledgeGraphQuizMessage produces a deep_question request without leaking language into config", () => {
+test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB or rag coupling", () => {
   const request = buildKnowledgeGraphQuizMessage(
     {
       id: "topic_intro",
@@ -14,7 +14,6 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without le
     },
     {
       language: "vi",
-      knowledgeBases: ["ai-course"],
     },
   );
 
@@ -27,11 +26,8 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without le
     preference: "",
   });
   assert.equal(request.options.requestSnapshotOverride?.capability, "deep_question");
-  assert.deepEqual(request.options.requestSnapshotOverride?.enabledTools, [
-    "rag",
-    "web_search",
-    "code_execution",
-  ]);
+  assert.deepEqual(request.options.requestSnapshotOverride?.enabledTools, []);
+  assert.deepEqual(request.options.requestSnapshotOverride?.knowledgeBases, []);
   assert.equal(request.options.requestSnapshotOverride?.language, "vi");
   assert.ok(!("language" in request.config));
 });

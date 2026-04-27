@@ -6,18 +6,18 @@ export function describeGraphRecommendation(recommendation: GraphRecommendation)
 } {
   if (recommendation.mode === "remediate") {
     return {
-      badge: "Review first",
-      message: "You should revisit this prerequisite area before moving forward because recent quiz results indicate weakness here.",
+      badge: "Ôn lại trước",
+      message: "Bạn nên quay lại phần kiến thức tiên quyết này trước khi học tiếp vì kết quả bài quiz gần đây cho thấy bạn vẫn còn yếu ở đây.",
     };
   }
   if (recommendation.mode === "review") {
     return {
-      badge: "Review",
-      message: "This node has been explored but should be reinforced before advancing further.",
+      badge: "Ôn tập",
+      message: "Bạn đã tìm hiểu nút này, nhưng nên củng cố thêm trước khi tiến xa hơn trong lộ trình học.",
     };
   }
   return {
-    badge: "Next",
-    message: "This is the strongest next step based on prerequisite readiness and course progression.",
+    badge: "Tiếp theo",
+    message: "Đây là bước học phù hợp nhất tiếp theo dựa trên mức sẵn sàng của kiến thức tiên quyết và tiến trình của môn học.",
   };
 }

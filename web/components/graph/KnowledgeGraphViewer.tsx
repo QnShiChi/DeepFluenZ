@@ -12,6 +12,7 @@ import {
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
 import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
+import { KNOWLEDGE_GRAPH_COPY } from "@/lib/knowledge-graph-copy";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
 import { getNodeProgress, markNodeProgress, type NodeStatus } from "@/lib/node-progress-api";
 import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
@@ -379,7 +380,7 @@ export default function KnowledgeGraphViewer({
           disabled={isExtracting}
           className="bg-white px-4 py-2 rounded shadow text-sm font-medium border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
         >
-          {isExtracting ? "Extracting AI Graph..." : "Import Syllabus"}
+          {isExtracting ? KNOWLEDGE_GRAPH_COPY.extractingGraph : KNOWLEDGE_GRAPH_COPY.importSyllabus}
         </button>
       </div>
       <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>

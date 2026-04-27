@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from "react";
 import { X, MessageSquare, ClipboardCheck, BookOpen, Cpu, Wrench, AppWindow, CheckCircle2, CircleDashed } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import {
+  formatKnowledgeGraphDifficultyLabel,
+  getKnowledgeGraphNodeTypeLabel,
+  KNOWLEDGE_GRAPH_COPY,
+} from "@/lib/knowledge-graph-copy";
 import type { NodeStatus } from "@/lib/node-progress-api";
 
 export interface SelectedNodeData {
@@ -32,10 +36,10 @@ const DIFFICULTY_STYLES: Record<string, string> = {
 };
 
 const NODE_TYPE_CONFIG: Record<string, { label: string; style: string; icon: React.ElementType }> = {
-  topic: { label: "Topic", style: "bg-blue-100 text-blue-700 border-blue-200", icon: BookOpen },
-  concept: { label: "Concept", style: "bg-purple-100 text-purple-700 border-purple-200", icon: Cpu },
-  skill: { label: "Skill", style: "bg-green-100 text-green-700 border-green-200", icon: Wrench },
-  application: { label: "Application", style: "bg-orange-100 text-orange-700 border-orange-200", icon: AppWindow },
+  topic: { label: getKnowledgeGraphNodeTypeLabel("topic"), style: "bg-blue-100 text-blue-700 border-blue-200", icon: BookOpen },
+  concept: { label: getKnowledgeGraphNodeTypeLabel("concept"), style: "bg-purple-100 text-purple-700 border-purple-200", icon: Cpu },
+  skill: { label: getKnowledgeGraphNodeTypeLabel("skill"), style: "bg-green-100 text-green-700 border-green-200", icon: Wrench },
+  application: { label: getKnowledgeGraphNodeTypeLabel("application"), style: "bg-orange-100 text-orange-700 border-orange-200", icon: AppWindow },
 };
 
 export default function NodeDetailPanel({
@@ -47,7 +51,6 @@ export default function NodeDetailPanel({
   onQuizNode,
   onJumpToRecommended,
 }: NodeDetailPanelProps) {
-  const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -108,7 +111,7 @@ export default function NodeDetailPanel({
               {typeConfig.label}
             </span>
             <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border ${diffStyle}`}>
-              {node.difficulty.charAt(0).toUpperCase() + node.difficulty.slice(1)}
+              {formatKnowledgeGraphDifficultyLabel(node.difficulty)}
             </span>
           </div>
         </div>
@@ -130,7 +133,7 @@ export default function NodeDetailPanel({
               onClick={() => onJumpToRecommended?.(recommendation.recommendedNodeId)}
               className="mt-2 text-xs font-medium text-amber-900 underline underline-offset-2"
             >
-              Go to recommended node
+              {KNOWLEDGE_GRAPH_COPY.recommendedNodeCta}
             </button>
           </div>
         ) : null}
@@ -140,7 +143,7 @@ export default function NodeDetailPanel({
           </p>
         ) : (
           <p className="text-sm text-slate-400 italic">
-            {t("No description available for this topic.")}
+            {KNOWLEDGE_GRAPH_COPY.noDescription}
           </p>
         )}
       </div>
@@ -152,14 +155,14 @@ export default function NodeDetailPanel({
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-sm"
         >
           <MessageSquare className="w-4 h-4" />
-          {t("Ask about this topic")}
+          {KNOWLEDGE_GRAPH_COPY.askAboutTopic}
         </button>
         <button
           onClick={() => onQuizNode(node)}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 active:scale-[0.98] transition-all shadow-sm"
         >
           <ClipboardCheck className="w-4 h-4" />
-          {t("Test your knowledge")}
+          {KNOWLEDGE_GRAPH_COPY.testKnowledge}
         </button>
       </div>
 

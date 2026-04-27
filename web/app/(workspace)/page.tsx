@@ -734,7 +734,6 @@ export default function HomePage() {
             handleSelectCapability("deep_question");
             const quizRequest = buildKnowledgeGraphQuizMessage(node, {
               language: state.language,
-              knowledgeBases: state.knowledgeBases,
             });
             sendMessage(
               quizRequest.content,
