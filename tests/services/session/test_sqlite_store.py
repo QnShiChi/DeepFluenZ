@@ -229,7 +229,7 @@ def test_store_persists_graph_adaptive_gate_directly(store: SQLiteSessionStore) 
     assert stored["blocking_issue_ids"] == ["issue_cycle"]
 
 
-def test_get_graph_qa_payloads_return_none_for_non_dict_json(store: SQLiteSessionStore) -> None:
+def test_get_graph_qa_payloads_return_none_for_invalid_json_shapes(store: SQLiteSessionStore) -> None:
     payload = {
         "course_id": "intro-ai",
         "title": "Intro to AI",
@@ -262,10 +262,78 @@ def test_get_graph_qa_payloads_return_none_for_non_dict_json(store: SQLiteSessio
             """,
             ("intro-ai", '"not-a-dict"'),
         )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO graph_qa_reports (subject_id, report_json, analyzed_at, updated_at)
+            VALUES (?, ?, 2.0, 2.0)
+            """,
+            ("broken-report", '{"broken":'),
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO graph_qa_drafts (subject_id, draft_json, created_at, updated_at)
+            VALUES (?, ?, 2.0, 2.0)
+            """,
+            ("broken-draft", "["),
+        )
         conn.commit()
 
     assert asyncio.run(store.get_graph_qa_report("intro-ai")) is None
     assert asyncio.run(store.get_graph_qa_draft("intro-ai")) is None
+    assert asyncio.run(store.get_graph_qa_report("broken-report")) is None
+    assert asyncio.run(store.get_graph_qa_draft("broken-draft")) is None
+
+
+def test_save_graph_qa_report_rolls_back_when_gate_write_fails(
+    store: SQLiteSessionStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "course_id": "intro-ai",
+        "title": "Intro to AI",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    report = {
+        "course_id": "intro-ai",
+        "health_summary": {
+            "score": 90,
+            "adaptive_ready": True,
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+        },
+        "issues": [],
+        "suggested_fixes": [],
+        "gate_status": {
+            "status": "adaptive_ready",
+            "blocking_issue_ids": [],
+            "student_visible_message": "",
+            "instructor_message": "",
+        },
+    }
+
+    assert asyncio.run(store.upsert_course_template("intro-ai", json.dumps(payload))) is True
+
+    def fail_gate_write(*args, **kwargs) -> bool:
+        raise RuntimeError("gate write failed")
+
+    monkeypatch.setattr(store, "_save_graph_adaptive_gate_with_conn", fail_gate_write)
+
+    with pytest.raises(RuntimeError, match="gate write failed"):
+        asyncio.run(store.save_graph_qa_report("intro-ai", report))
+
+    assert asyncio.run(store.get_graph_qa_report("intro-ai")) is None
+    assert asyncio.run(store.get_graph_adaptive_gate("intro-ai")) is None
 
 
 def test_mark_node_progress_updates_current_node_and_preserves_dynamic_nodes(
