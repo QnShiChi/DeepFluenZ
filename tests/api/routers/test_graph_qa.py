@@ -63,6 +63,10 @@ def test_analyze_graph_qa_returns_report(store: SQLiteSessionStore) -> None:
         assert body["course_id"] == "intro-ai"
         assert body["health_summary"]["high_count"] == 1
         assert body["suggested_fixes"][0]["change_type"] == "change_relation_type"
+    gate = asyncio.run(store.get_graph_adaptive_gate("intro-ai"))
+    assert gate is not None
+    assert gate["status"] == body["gate_status"]["status"]
+    assert gate["blocking_issue_ids"] == body["gate_status"]["blocking_issue_ids"]
 
 
 def test_get_graph_qa_report_returns_validated_payload(store: SQLiteSessionStore) -> None:
@@ -90,7 +94,12 @@ def test_apply_graph_qa_fix_updates_report(store: SQLiteSessionStore) -> None:
             json={"fix_id": "fix_edge_intro_search"},
         )
         assert response.status_code == 200
-        assert response.json()["gate_status"]["status"] == "adaptive_ready"
+        body = response.json()
+        assert body["gate_status"]["status"] == "adaptive_ready"
+    gate = asyncio.run(store.get_graph_adaptive_gate("intro-ai"))
+    assert gate is not None
+    assert gate["status"] == body["gate_status"]["status"]
+    assert gate["blocking_issue_ids"] == body["gate_status"]["blocking_issue_ids"]
 
 
 def test_graph_qa_draft_commit_reanalyzes(store: SQLiteSessionStore) -> None:
@@ -106,7 +115,12 @@ def test_graph_qa_draft_commit_reanalyzes(store: SQLiteSessionStore) -> None:
 
         commit = client.post("/api/v1/graph/qa/draft/intro-ai/commit")
         assert commit.status_code == 200
-        assert commit.json()["gate_status"]["status"] == "adaptive_ready"
+        body = commit.json()
+        assert body["gate_status"]["status"] == "adaptive_ready"
+    gate = asyncio.run(store.get_graph_adaptive_gate("intro-ai"))
+    assert gate is not None
+    assert gate["status"] == body["gate_status"]["status"]
+    assert gate["blocking_issue_ids"] == body["gate_status"]["blocking_issue_ids"]
 
 
 def test_analyze_graph_qa_returns_404_for_missing_course(store: SQLiteSessionStore) -> None:
