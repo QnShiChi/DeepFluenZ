@@ -1409,6 +1409,51 @@ class SQLiteSessionStore:
     async def get_course_template(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_course_template_sync, subject_id)
 
+    def _save_graph_adaptive_gate_sync(self, subject_id: str, gate: dict[str, Any]) -> bool:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO graph_adaptive_gates (
+                    subject_id, status, blocking_issue_ids_json, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    subject_id,
+                    str(gate.get("status") or "adaptive_ready"),
+                    _json_dumps(gate.get("blocking_issue_ids") or []),
+                    now,
+                ),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def save_graph_adaptive_gate(self, subject_id: str, gate: dict[str, Any]) -> bool:
+        return await self._run(self._save_graph_adaptive_gate_sync, subject_id, gate)
+
+    def _get_graph_adaptive_gate_sync(self, subject_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT subject_id, status, blocking_issue_ids_json, updated_at
+                FROM graph_adaptive_gates
+                WHERE subject_id = ?
+                """,
+                (subject_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "subject_id": row["subject_id"],
+            "status": row["status"] or "adaptive_ready",
+            "blocking_issue_ids": _json_loads(row["blocking_issue_ids_json"], []),
+            "updated_at": float(row["updated_at"]),
+        }
+
+    async def get_graph_adaptive_gate(self, subject_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_graph_adaptive_gate_sync, subject_id)
+
     def _save_graph_qa_report_sync(self, subject_id: str, report: dict[str, Any]) -> bool:
         now = time.time()
         with self._connect() as conn:
@@ -1425,23 +1470,10 @@ class SQLiteSessionStore:
                 """,
                 (subject_id, _json_dumps(report), subject_id, now, now),
             )
-            gate_status = report.get("gate_status") if isinstance(report, dict) else {}
-            gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO graph_adaptive_gates (
-                    subject_id, status, blocking_issue_ids_json, updated_at
-                )
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    subject_id,
-                    str(gate_status_dict.get("status") or "adaptive_ready"),
-                    _json_dumps(gate_status_dict.get("blocking_issue_ids") or []),
-                    now,
-                ),
-            )
             conn.commit()
+        gate_status = report.get("gate_status") if isinstance(report, dict) else {}
+        gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
+        self._save_graph_adaptive_gate_sync(subject_id, gate_status_dict)
         return cur.rowcount > 0
 
     async def save_graph_qa_report(self, subject_id: str, report: dict[str, Any]) -> bool:
@@ -1455,7 +1487,8 @@ class SQLiteSessionStore:
             ).fetchone()
         if row is None:
             return None
-        return _json_loads(row["report_json"], None)
+        payload = _json_loads(row["report_json"], None)
+        return payload if isinstance(payload, dict) else None
 
     async def get_graph_qa_report(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_graph_qa_report_sync, subject_id)
@@ -1490,7 +1523,8 @@ class SQLiteSessionStore:
             ).fetchone()
         if row is None:
             return None
-        return _json_loads(row["draft_json"], None)
+        payload = _json_loads(row["draft_json"], None)
+        return payload if isinstance(payload, dict) else None
 
     async def get_graph_qa_draft(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_graph_qa_draft_sync, subject_id)

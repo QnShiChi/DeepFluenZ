@@ -192,6 +192,41 @@ def test_store_persists_graph_qa_report_and_draft(store: SQLiteSessionStore) -> 
         asyncio.run(store.get_graph_qa_draft("intro-ai"))["changes"][0]["fix_id"]
         == "fix_edge_intro_search"
     )
+    gate = asyncio.run(store.get_graph_adaptive_gate("intro-ai"))
+    assert gate is not None
+    assert gate["status"] == "adaptive_ready"
+    assert gate["blocking_issue_ids"] == []
+
+
+def test_store_persists_graph_adaptive_gate_directly(store: SQLiteSessionStore) -> None:
+    payload = {
+        "course_id": "intro-ai",
+        "title": "Intro to AI",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    gate = {
+        "status": "adaptive_blocked",
+        "blocking_issue_ids": ["issue_cycle"],
+    }
+
+    assert asyncio.run(store.upsert_course_template("intro-ai", json.dumps(payload))) is True
+    assert asyncio.run(store.save_graph_adaptive_gate("intro-ai", gate)) is True
+
+    stored = asyncio.run(store.get_graph_adaptive_gate("intro-ai"))
+
+    assert stored is not None
+    assert stored["subject_id"] == "intro-ai"
+    assert stored["status"] == "adaptive_blocked"
+    assert stored["blocking_issue_ids"] == ["issue_cycle"]
 
 
 def test_mark_node_progress_updates_current_node_and_preserves_dynamic_nodes(

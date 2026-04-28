@@ -260,6 +260,29 @@ def test_apply_graph_fix_changes_relation_type() -> None:
     assert edge.relation_type == "prerequisite"
 
 
+@pytest.mark.parametrize(
+    "fix",
+    [
+        {
+            "change_type": "change_relation_type",
+            "preview": {"edge_id": "edge_intro_search"},
+        },
+        {
+            "change_type": "change_relation_type",
+            "preview": {
+                "edge_id": "edge_intro_search",
+                "after": {"relation_type": ""},
+            },
+        },
+    ],
+)
+def test_apply_graph_fix_rejects_malformed_relation_type_payload(fix: dict[str, object]) -> None:
+    graph = build_graph_with_suspect_part_of()
+
+    with pytest.raises(ValueError, match="preview.after.relation_type"):
+        apply_graph_fix(graph, fix)
+
+
 def test_analyze_course_graph_ignores_part_of_edge_not_in_backbone_edge_ids() -> None:
     graph = CourseKnowledgeGraph.model_validate(
         {
