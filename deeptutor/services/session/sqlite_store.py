@@ -1469,27 +1469,34 @@ class SQLiteSessionStore:
         gate_status = report.get("gate_status") if isinstance(report, dict) else {}
         gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
         with self._connect() as conn:
-            report_cur = conn.execute(
-                """
-                INSERT OR REPLACE INTO graph_qa_reports (
-                    subject_id, report_json, analyzed_at, updated_at
+            try:
+                report_cur = conn.execute(
+                    """
+                    INSERT OR REPLACE INTO graph_qa_reports (
+                        subject_id, report_json, analyzed_at, updated_at
+                    )
+                    VALUES (
+                        ?, ?,
+                        COALESCE((SELECT analyzed_at FROM graph_qa_reports WHERE subject_id = ?), ?),
+                        ?
+                    )
+                    """,
+                    (subject_id, _json_dumps(report), subject_id, now, now),
                 )
-                VALUES (
-                    ?, ?,
-                    COALESCE((SELECT analyzed_at FROM graph_qa_reports WHERE subject_id = ?), ?),
-                    ?
+                gate_saved = self._save_graph_adaptive_gate_with_conn(
+                    conn,
+                    subject_id,
+                    gate_status_dict,
+                    now=now,
                 )
-                """,
-                (subject_id, _json_dumps(report), subject_id, now, now),
-            )
-            gate_saved = self._save_graph_adaptive_gate_with_conn(
-                conn,
-                subject_id,
-                gate_status_dict,
-                now=now,
-            )
-            conn.commit()
-        return report_cur.rowcount > 0 and gate_saved
+                if not gate_saved:
+                    conn.rollback()
+                    return False
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return report_cur.rowcount > 0
 
     async def save_graph_qa_report(self, subject_id: str, report: dict[str, Any]) -> bool:
         return await self._run(self._save_graph_qa_report_sync, subject_id, report)
