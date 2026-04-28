@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from deeptutor.services.graph.models import GraphQaIssue, GraphQaReport, GraphQaSuggestedFix
+from deeptutor.services.graph.models import (
+    CourseKnowledgeGraph,
+    GraphQaIssue,
+    GraphQaReport,
+    GraphQaSuggestedFix,
+)
+from deeptutor.services.graph.qa import analyze_course_graph
 
 
 def test_graph_qa_report_defaults_nested_lists() -> None:
@@ -104,3 +110,93 @@ def test_graph_qa_health_summary_rejects_negative_counts() -> None:
                 },
             }
         )
+
+
+def build_graph_with_suspect_part_of() -> CourseKnowledgeGraph:
+    return CourseKnowledgeGraph.model_validate(
+        {
+            "course_id": "intro-ai",
+            "title": "Intro to AI",
+            "source_type": "manual_json",
+            "nodes": [
+                {
+                    "node_id": "topic_intro",
+                    "title": "Introduction to AI",
+                    "node_type": "topic",
+                },
+                {
+                    "node_id": "topic_search",
+                    "title": "AI Search Techniques",
+                    "node_type": "topic",
+                },
+            ],
+            "edges": [
+                {
+                    "edge_id": "edge_intro_search",
+                    "source": "topic_intro",
+                    "target": "topic_search",
+                    "relation_type": "part_of",
+                    "confidence": 1.0,
+                }
+            ],
+            "audit": {
+                "backbone_node_ids": ["topic_intro", "topic_search"],
+                "enriched_node_ids": [],
+                "backbone_edge_ids": ["edge_intro_search"],
+                "enriched_edge_ids": [],
+                "warnings": [],
+            },
+        }
+    )
+
+
+def test_analyze_course_graph_flags_suspect_part_of_edge() -> None:
+    report = analyze_course_graph(build_graph_with_suspect_part_of())
+
+    assert report.health_summary.high_count == 1
+    assert report.gate_status.status == "adaptive_limited"
+    assert report.issues[0].kind == "suspect_part_of_should_be_prerequisite"
+    assert report.suggested_fixes[0].change_type == "change_relation_type"
+
+
+def test_analyze_course_graph_blocks_cycles() -> None:
+    graph = CourseKnowledgeGraph.model_validate(
+        {
+            "course_id": "cycle-ai",
+            "title": "Cycle AI",
+            "source_type": "manual_json",
+            "nodes": [
+                {"node_id": "a", "title": "A", "node_type": "topic"},
+                {"node_id": "b", "title": "B", "node_type": "topic"},
+            ],
+            "edges": [
+                {
+                    "edge_id": "edge_ab",
+                    "source": "a",
+                    "target": "b",
+                    "relation_type": "prerequisite",
+                    "confidence": 1.0,
+                },
+                {
+                    "edge_id": "edge_ba",
+                    "source": "b",
+                    "target": "a",
+                    "relation_type": "prerequisite",
+                    "confidence": 1.0,
+                },
+            ],
+            "audit": {
+                "backbone_node_ids": ["a", "b"],
+                "enriched_node_ids": [],
+                "backbone_edge_ids": ["edge_ab", "edge_ba"],
+                "enriched_edge_ids": [],
+                "warnings": [],
+            },
+        }
+    )
+
+    report = analyze_course_graph(graph)
+
+    assert report.health_summary.critical_count == 1
+    assert report.gate_status.status == "adaptive_blocked"
+    assert report.issues[0].kind == "prerequisite_cycle"
