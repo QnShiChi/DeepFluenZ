@@ -166,10 +166,10 @@ class GraphQaHealthSummary(BaseModel):
 
     score: int = Field(ge=0, le=100)
     adaptive_ready: bool = False
-    critical_count: int = 0
-    high_count: int = 0
-    medium_count: int = 0
-    low_count: int = 0
+    critical_count: int = Field(default=0, ge=0)
+    high_count: int = Field(default=0, ge=0)
+    medium_count: int = Field(default=0, ge=0)
+    low_count: int = Field(default=0, ge=0)
 
 
 class GraphQaIssue(BaseModel):

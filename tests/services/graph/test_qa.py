@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from deeptutor.services.graph.models import GraphQaIssue, GraphQaReport, GraphQaSuggestedFix
 
 
@@ -56,3 +59,25 @@ def test_graph_qa_issue_and_fix_literals_validate() -> None:
 
     assert issue.severity == "high"
     assert fix.change_type == "change_relation_type"
+
+
+def test_graph_qa_rejects_invalid_literals() -> None:
+    with pytest.raises(ValidationError):
+        GraphQaIssue.model_validate(
+            {
+                "issue_id": "issue_2",
+                "severity": "urgent",
+                "kind": "orphan_node",
+                "message": "Invalid severity should fail.",
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        GraphQaSuggestedFix.model_validate(
+            {
+                "fix_id": "fix_2",
+                "issue_id": "issue_2",
+                "confidence": 0.5,
+                "change_type": "relabel_edge",
+            }
+        )
