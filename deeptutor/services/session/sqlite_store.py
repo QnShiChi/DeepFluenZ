@@ -233,6 +233,27 @@ class SQLiteSessionStore:
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (session_id, subject_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS graph_qa_reports (
+                    subject_id TEXT PRIMARY KEY REFERENCES course_graph_templates(subject_id) ON DELETE CASCADE,
+                    report_json TEXT NOT NULL DEFAULT '{}',
+                    analyzed_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS graph_qa_drafts (
+                    subject_id TEXT PRIMARY KEY REFERENCES course_graph_templates(subject_id) ON DELETE CASCADE,
+                    draft_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS graph_adaptive_gates (
+                    subject_id TEXT PRIMARY KEY REFERENCES course_graph_templates(subject_id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'adaptive_ready',
+                    blocking_issue_ids_json TEXT NOT NULL DEFAULT '[]',
+                    updated_at REAL NOT NULL
+                );
                 """
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -1387,6 +1408,92 @@ class SQLiteSessionStore:
 
     async def get_course_template(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_course_template_sync, subject_id)
+
+    def _save_graph_qa_report_sync(self, subject_id: str, report: dict[str, Any]) -> bool:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO graph_qa_reports (
+                    subject_id, report_json, analyzed_at, updated_at
+                )
+                VALUES (
+                    ?, ?,
+                    COALESCE((SELECT analyzed_at FROM graph_qa_reports WHERE subject_id = ?), ?),
+                    ?
+                )
+                """,
+                (subject_id, _json_dumps(report), subject_id, now, now),
+            )
+            gate_status = report.get("gate_status") if isinstance(report, dict) else {}
+            gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO graph_adaptive_gates (
+                    subject_id, status, blocking_issue_ids_json, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    subject_id,
+                    str(gate_status_dict.get("status") or "adaptive_ready"),
+                    _json_dumps(gate_status_dict.get("blocking_issue_ids") or []),
+                    now,
+                ),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def save_graph_qa_report(self, subject_id: str, report: dict[str, Any]) -> bool:
+        return await self._run(self._save_graph_qa_report_sync, subject_id, report)
+
+    def _get_graph_qa_report_sync(self, subject_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT report_json FROM graph_qa_reports WHERE subject_id = ?",
+                (subject_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _json_loads(row["report_json"], None)
+
+    async def get_graph_qa_report(self, subject_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_graph_qa_report_sync, subject_id)
+
+    def _save_graph_qa_draft_sync(self, subject_id: str, draft: dict[str, Any]) -> bool:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO graph_qa_drafts (
+                    subject_id, draft_json, created_at, updated_at
+                )
+                VALUES (
+                    ?, ?,
+                    COALESCE((SELECT created_at FROM graph_qa_drafts WHERE subject_id = ?), ?),
+                    ?
+                )
+                """,
+                (subject_id, _json_dumps(draft), subject_id, now, now),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def save_graph_qa_draft(self, subject_id: str, draft: dict[str, Any]) -> bool:
+        return await self._run(self._save_graph_qa_draft_sync, subject_id, draft)
+
+    def _get_graph_qa_draft_sync(self, subject_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT draft_json FROM graph_qa_drafts WHERE subject_id = ?",
+                (subject_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _json_loads(row["draft_json"], None)
+
+    async def get_graph_qa_draft(self, subject_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_graph_qa_draft_sync, subject_id)
 
     def _upsert_student_state_sync(self, session_id: str, subject_id: str, state_dict: dict[str, Any]) -> bool:
         now = time.time()

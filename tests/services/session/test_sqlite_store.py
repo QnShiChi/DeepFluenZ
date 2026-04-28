@@ -138,6 +138,62 @@ def test_course_template_round_trips_import_report(store: SQLiteSessionStore) ->
     assert "backbone_only" in stored["template_json"]
 
 
+def test_store_persists_graph_qa_report_and_draft(store: SQLiteSessionStore) -> None:
+    payload = {
+        "course_id": "intro-ai",
+        "title": "Intro to AI",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    report = {
+        "course_id": "intro-ai",
+        "health_summary": {
+            "score": 90,
+            "adaptive_ready": True,
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+        },
+        "issues": [],
+        "suggested_fixes": [],
+        "gate_status": {
+            "status": "adaptive_ready",
+            "blocking_issue_ids": [],
+            "student_visible_message": "",
+            "instructor_message": "",
+        },
+    }
+    draft = {
+        "course_id": "intro-ai",
+        "changes": [
+            {
+                "change_id": "change_1",
+                "fix_id": "fix_edge_intro_search",
+                "change_type": "change_relation_type",
+                "preview": {"edge_id": "edge_intro_search"},
+            }
+        ],
+    }
+
+    assert asyncio.run(store.upsert_course_template("intro-ai", json.dumps(payload))) is True
+    assert asyncio.run(store.save_graph_qa_report("intro-ai", report)) is True
+    assert asyncio.run(store.save_graph_qa_draft("intro-ai", draft)) is True
+    assert asyncio.run(store.get_graph_qa_report("intro-ai"))["course_id"] == "intro-ai"
+    assert (
+        asyncio.run(store.get_graph_qa_draft("intro-ai"))["changes"][0]["fix_id"]
+        == "fix_edge_intro_search"
+    )
+
+
 def test_mark_node_progress_updates_current_node_and_preserves_dynamic_nodes(
     store: SQLiteSessionStore,
 ) -> None:

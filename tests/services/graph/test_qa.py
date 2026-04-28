@@ -7,6 +7,7 @@ from deeptutor.services.graph.models import (
     GraphQaReport,
     GraphQaSuggestedFix,
 )
+from deeptutor.services.graph.qa_authoring import apply_graph_fix
 from deeptutor.services.graph.qa import analyze_course_graph
 
 
@@ -240,6 +241,23 @@ def test_analyze_course_graph_returns_ready_for_clean_graph() -> None:
     assert report.gate_status.status == "adaptive_ready"
     assert report.issues == []
     assert report.suggested_fixes == []
+
+
+def test_apply_graph_fix_changes_relation_type() -> None:
+    graph = build_graph_with_suspect_part_of()
+    updated = apply_graph_fix(
+        graph,
+        {
+            "change_type": "change_relation_type",
+            "preview": {
+                "edge_id": "edge_intro_search",
+                "after": {"relation_type": "prerequisite"},
+            },
+        },
+    )
+
+    edge = next(edge for edge in updated.edges if edge.edge_id == "edge_intro_search")
+    assert edge.relation_type == "prerequisite"
 
 
 def test_analyze_course_graph_ignores_part_of_edge_not_in_backbone_edge_ids() -> None:
