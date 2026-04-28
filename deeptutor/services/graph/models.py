@@ -55,6 +55,23 @@ RecommendationReasonCode = Literal[
     "recent_quiz_weakness",
     "needs_review_before_advance",
 ]
+GraphQaSeverity = Literal["critical", "high", "medium", "low"]
+GraphQaIssueKind = Literal[
+    "prerequisite_cycle",
+    "backbone_path_broken",
+    "unreachable_core_node",
+    "suspect_part_of_should_be_prerequisite",
+    "missing_prerequisite_edge",
+    "redundant_prerequisite_edge",
+    "orphan_node",
+    "inconsistent_module_flow",
+]
+GraphQaFixChangeType = Literal[
+    "change_relation_type",
+    "add_prerequisite_edge",
+    "remove_prerequisite_edge",
+]
+GraphAdaptiveGateStatus = Literal["adaptive_ready", "adaptive_limited", "adaptive_blocked"]
 
 
 class SourceRef(BaseModel):
@@ -142,3 +159,56 @@ class GraphRecommendation(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     reason_codes: list[RecommendationReasonCode] = Field(default_factory=list)
     backup_node_ids: list[str] = Field(default_factory=list)
+
+
+class GraphQaHealthSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    score: int = Field(ge=0, le=100)
+    adaptive_ready: bool = False
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+
+
+class GraphQaIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str
+    severity: GraphQaSeverity
+    kind: GraphQaIssueKind
+    message: str
+    affected_node_ids: list[str] = Field(default_factory=list)
+    affected_edge_ids: list[str] = Field(default_factory=list)
+    why_it_matters: str = ""
+
+
+class GraphQaSuggestedFix(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fix_id: str
+    issue_id: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    change_type: GraphQaFixChangeType
+    preview: dict[str, object] = Field(default_factory=dict)
+    safe_for_bulk_apply: bool = False
+
+
+class GraphQaGateStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: GraphAdaptiveGateStatus
+    blocking_issue_ids: list[str] = Field(default_factory=list)
+    student_visible_message: str = ""
+    instructor_message: str = ""
+
+
+class GraphQaReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course_id: str
+    health_summary: GraphQaHealthSummary
+    issues: list[GraphQaIssue] = Field(default_factory=list)
+    suggested_fixes: list[GraphQaSuggestedFix] = Field(default_factory=list)
+    gate_status: GraphQaGateStatus
