@@ -229,6 +229,45 @@ def test_store_persists_graph_adaptive_gate_directly(store: SQLiteSessionStore) 
     assert stored["blocking_issue_ids"] == ["issue_cycle"]
 
 
+def test_get_graph_qa_payloads_return_none_for_non_dict_json(store: SQLiteSessionStore) -> None:
+    payload = {
+        "course_id": "intro-ai",
+        "title": "Intro to AI",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+
+    assert asyncio.run(store.upsert_course_template("intro-ai", json.dumps(payload))) is True
+
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO graph_qa_reports (subject_id, report_json, analyzed_at, updated_at)
+            VALUES (?, ?, 1.0, 1.0)
+            """,
+            ("intro-ai", '["not-a-dict"]'),
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO graph_qa_drafts (subject_id, draft_json, created_at, updated_at)
+            VALUES (?, ?, 1.0, 1.0)
+            """,
+            ("intro-ai", '"not-a-dict"'),
+        )
+        conn.commit()
+
+    assert asyncio.run(store.get_graph_qa_report("intro-ai")) is None
+    assert asyncio.run(store.get_graph_qa_draft("intro-ai")) is None
+
+
 def test_mark_node_progress_updates_current_node_and_preserves_dynamic_nodes(
     store: SQLiteSessionStore,
 ) -> None:

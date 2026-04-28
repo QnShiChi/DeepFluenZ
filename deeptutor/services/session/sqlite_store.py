@@ -1409,25 +1409,35 @@ class SQLiteSessionStore:
     async def get_course_template(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_course_template_sync, subject_id)
 
-    def _save_graph_adaptive_gate_sync(self, subject_id: str, gate: dict[str, Any]) -> bool:
-        now = time.time()
-        with self._connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT OR REPLACE INTO graph_adaptive_gates (
-                    subject_id, status, blocking_issue_ids_json, updated_at
-                )
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    subject_id,
-                    str(gate.get("status") or "adaptive_ready"),
-                    _json_dumps(gate.get("blocking_issue_ids") or []),
-                    now,
-                ),
+    def _save_graph_adaptive_gate_with_conn(
+        self,
+        conn: sqlite3.Connection,
+        subject_id: str,
+        gate: dict[str, Any],
+        now: float | None = None,
+    ) -> bool:
+        resolved_now = time.time() if now is None else now
+        cur = conn.execute(
+            """
+            INSERT OR REPLACE INTO graph_adaptive_gates (
+                subject_id, status, blocking_issue_ids_json, updated_at
             )
-            conn.commit()
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                subject_id,
+                str(gate.get("status") or "adaptive_ready"),
+                _json_dumps(gate.get("blocking_issue_ids") or []),
+                resolved_now,
+            ),
+        )
         return cur.rowcount > 0
+
+    def _save_graph_adaptive_gate_sync(self, subject_id: str, gate: dict[str, Any]) -> bool:
+        with self._connect() as conn:
+            saved = self._save_graph_adaptive_gate_with_conn(conn, subject_id, gate)
+            conn.commit()
+        return saved
 
     async def save_graph_adaptive_gate(self, subject_id: str, gate: dict[str, Any]) -> bool:
         return await self._run(self._save_graph_adaptive_gate_sync, subject_id, gate)
@@ -1456,8 +1466,10 @@ class SQLiteSessionStore:
 
     def _save_graph_qa_report_sync(self, subject_id: str, report: dict[str, Any]) -> bool:
         now = time.time()
+        gate_status = report.get("gate_status") if isinstance(report, dict) else {}
+        gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
         with self._connect() as conn:
-            cur = conn.execute(
+            report_cur = conn.execute(
                 """
                 INSERT OR REPLACE INTO graph_qa_reports (
                     subject_id, report_json, analyzed_at, updated_at
@@ -1470,11 +1482,14 @@ class SQLiteSessionStore:
                 """,
                 (subject_id, _json_dumps(report), subject_id, now, now),
             )
+            gate_saved = self._save_graph_adaptive_gate_with_conn(
+                conn,
+                subject_id,
+                gate_status_dict,
+                now=now,
+            )
             conn.commit()
-        gate_status = report.get("gate_status") if isinstance(report, dict) else {}
-        gate_status_dict = gate_status if isinstance(gate_status, dict) else {}
-        self._save_graph_adaptive_gate_sync(subject_id, gate_status_dict)
-        return cur.rowcount > 0
+        return report_cur.rowcount > 0 and gate_saved
 
     async def save_graph_qa_report(self, subject_id: str, report: dict[str, Any]) -> bool:
         return await self._run(self._save_graph_qa_report_sync, subject_id, report)
