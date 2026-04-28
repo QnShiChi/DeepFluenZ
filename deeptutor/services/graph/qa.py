@@ -34,11 +34,11 @@ def analyze_course_graph(graph: CourseKnowledgeGraph) -> GraphQaReport:
             )
         )
 
-    backbone_node_ids = set(graph.audit.backbone_node_ids)
+    backbone_edge_ids = set(graph.audit.backbone_edge_ids)
     for edge in graph.edges:
         if edge.relation_type != "part_of":
             continue
-        if edge.source in backbone_node_ids and edge.target in backbone_node_ids:
+        if edge.edge_id in backbone_edge_ids:
             issue_id = f"issue_{edge.edge_id}"
             issues.append(
                 GraphQaIssue(
@@ -89,7 +89,7 @@ def analyze_course_graph(graph: CourseKnowledgeGraph) -> GraphQaReport:
                 - medium_count * 8
                 - low_count * 3,
             ),
-            adaptive_ready=status != "adaptive_blocked",
+            adaptive_ready=status == "adaptive_ready",
             critical_count=critical_count,
             high_count=high_count,
             medium_count=medium_count,

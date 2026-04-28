@@ -150,10 +150,41 @@ def build_graph_with_suspect_part_of() -> CourseKnowledgeGraph:
     )
 
 
+def build_clean_graph() -> CourseKnowledgeGraph:
+    return CourseKnowledgeGraph.model_validate(
+        {
+            "course_id": "clean-ai",
+            "title": "Clean AI",
+            "source_type": "manual_json",
+            "nodes": [
+                {"node_id": "topic_intro", "title": "Introduction to AI", "node_type": "topic"},
+                {"node_id": "topic_search", "title": "AI Search Techniques", "node_type": "topic"},
+            ],
+            "edges": [
+                {
+                    "edge_id": "edge_intro_search",
+                    "source": "topic_intro",
+                    "target": "topic_search",
+                    "relation_type": "prerequisite",
+                    "confidence": 1.0,
+                }
+            ],
+            "audit": {
+                "backbone_node_ids": ["topic_intro", "topic_search"],
+                "enriched_node_ids": [],
+                "backbone_edge_ids": ["edge_intro_search"],
+                "enriched_edge_ids": [],
+                "warnings": [],
+            },
+        }
+    )
+
+
 def test_analyze_course_graph_flags_suspect_part_of_edge() -> None:
     report = analyze_course_graph(build_graph_with_suspect_part_of())
 
     assert report.health_summary.high_count == 1
+    assert report.health_summary.adaptive_ready is False
     assert report.gate_status.status == "adaptive_limited"
     assert report.issues[0].kind == "suspect_part_of_should_be_prerequisite"
     assert report.suggested_fixes[0].change_type == "change_relation_type"
@@ -200,3 +231,49 @@ def test_analyze_course_graph_blocks_cycles() -> None:
     assert report.health_summary.critical_count == 1
     assert report.gate_status.status == "adaptive_blocked"
     assert report.issues[0].kind == "prerequisite_cycle"
+
+
+def test_analyze_course_graph_returns_ready_for_clean_graph() -> None:
+    report = analyze_course_graph(build_clean_graph())
+
+    assert report.health_summary.adaptive_ready is True
+    assert report.gate_status.status == "adaptive_ready"
+    assert report.issues == []
+    assert report.suggested_fixes == []
+
+
+def test_analyze_course_graph_ignores_part_of_edge_not_in_backbone_edge_ids() -> None:
+    graph = CourseKnowledgeGraph.model_validate(
+        {
+            "course_id": "intro-ai",
+            "title": "Intro to AI",
+            "source_type": "manual_json",
+            "nodes": [
+                {"node_id": "topic_intro", "title": "Introduction to AI", "node_type": "topic"},
+                {"node_id": "topic_search", "title": "AI Search Techniques", "node_type": "topic"},
+            ],
+            "edges": [
+                {
+                    "edge_id": "edge_intro_search",
+                    "source": "topic_intro",
+                    "target": "topic_search",
+                    "relation_type": "part_of",
+                    "confidence": 1.0,
+                }
+            ],
+            "audit": {
+                "backbone_node_ids": ["topic_intro", "topic_search"],
+                "enriched_node_ids": [],
+                "backbone_edge_ids": [],
+                "enriched_edge_ids": ["edge_intro_search"],
+                "warnings": [],
+            },
+        }
+    )
+
+    report = analyze_course_graph(graph)
+
+    assert report.health_summary.adaptive_ready is True
+    assert report.gate_status.status == "adaptive_ready"
+    assert report.issues == []
+    assert report.suggested_fixes == []
