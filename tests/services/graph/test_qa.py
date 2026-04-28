@@ -81,3 +81,26 @@ def test_graph_qa_rejects_invalid_literals() -> None:
                 "change_type": "relabel_edge",
             }
         )
+
+
+def test_graph_qa_health_summary_rejects_negative_counts() -> None:
+    with pytest.raises(ValidationError):
+        GraphQaReport.model_validate(
+            {
+                "course_id": "intro-ai",
+                "health_summary": {
+                    "score": 82,
+                    "adaptive_ready": False,
+                    "critical_count": -1,
+                    "high_count": 1,
+                    "medium_count": 0,
+                    "low_count": 0,
+                },
+                "gate_status": {
+                    "status": "adaptive_limited",
+                    "blocking_issue_ids": [],
+                    "student_visible_message": "Adaptive guidance is available with limitations.",
+                    "instructor_message": "Resolve high-priority graph issues to improve adaptive reliability.",
+                },
+            }
+        )
