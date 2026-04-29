@@ -40,6 +40,7 @@ import {
   type GraphQaIssue,
   type GraphQaReport,
 } from "@/lib/graph-qa-api";
+import { resolveGraphQaIssueNode } from "@/lib/graph-qa-ui";
 
 type IssuesByNodeId = Record<string, Array<{ severity: "critical" | "high" | "medium" | "low"; kind: string }>>;
 
@@ -273,14 +274,10 @@ export default function KnowledgeGraphViewer({
   }, [courseId, refreshGraphQa]);
 
   const handleFocusIssue = useCallback((issue: GraphQaIssue) => {
-    const targetNodeId = issue.affected_node_ids[0];
-    if (!targetNodeId) return;
-    const targetNode = nodes.find((node) => node.id === targetNodeId);
+    const targetNode = resolveGraphQaIssueNode(nodes, issue);
     if (!targetNode) return;
     selectNode(targetNode);
-    setCurrentNodeId(targetNode.id);
-    persistRuntimeState(targetNode.id, dynamicNodes);
-  }, [dynamicNodes, nodes, persistRuntimeState, selectNode]);
+  }, [nodes, selectNode]);
 
   const updateNodeProgress = useCallback((
     nodeId: string,

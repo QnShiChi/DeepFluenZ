@@ -2,7 +2,7 @@ import React from "react";
 
 import type { GraphQaIssue, GraphQaReport } from "@/lib/graph-qa-api";
 import {
-  describeAdaptiveGateStatus,
+  describeGraphHealthStatus,
   getGraphQaSeverityLabel,
   groupGraphQaIssues,
 } from "@/lib/graph-qa-ui";
@@ -33,7 +33,7 @@ export default function GraphHealthPanel({
         <div>
           <h2 className="text-sm font-semibold text-slate-900">Graph Health</h2>
           <p className="mt-1 text-sm text-slate-600">
-            {describeAdaptiveGateStatus(report?.gate_status.status ?? "adaptive_ready")}
+            {describeGraphHealthStatus(report)}
           </p>
         </div>
         <button
