@@ -1,4 +1,30 @@
-import type { GraphQaReport } from "./graph-qa-api.ts";
+import type { GraphQaIssue, GraphQaIssueSeverity, GraphQaReport } from "./graph-qa-api.ts";
+
+export interface GroupedGraphQaIssues {
+  critical: GraphQaIssue[];
+  high: GraphQaIssue[];
+  medium: GraphQaIssue[];
+  low: GraphQaIssue[];
+}
+
+export function groupGraphQaIssues(issues: GraphQaIssue[]): GroupedGraphQaIssues {
+  const grouped: GroupedGraphQaIssues = {
+    critical: [],
+    high: [],
+    medium: [],
+    low: [],
+  };
+
+  issues.forEach((issue) => {
+    grouped[issue.severity].push(issue);
+  });
+
+  return grouped;
+}
+
+export function getGraphQaSeverityLabel(severity: GraphQaIssueSeverity): string {
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
+}
 
 export function describeAdaptiveGateStatus(status: GraphQaReport["gate_status"]["status"]): string {
   if (status === "adaptive_blocked") {

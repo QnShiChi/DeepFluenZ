@@ -6,6 +6,8 @@ import {
   KNOWLEDGE_GRAPH_COPY,
 } from "@/lib/knowledge-graph-copy";
 import type { NodeStatus } from "@/lib/node-progress-api";
+import type { GraphQaIssue } from "@/lib/graph-qa-api";
+import { getGraphQaSeverityLabel } from "@/lib/graph-qa-ui";
 
 export interface SelectedNodeData {
   id: string;
@@ -16,6 +18,7 @@ export interface SelectedNodeData {
   courseId?: string;
   graphState?: string;
   hasUnmetPrerequisites?: boolean;
+  qaIssues?: GraphQaIssue[];
 }
 
 interface NodeDetailPanelProps {
@@ -26,6 +29,7 @@ interface NodeDetailPanelProps {
     badge: string;
     message: string;
   };
+  qaIssues?: GraphQaIssue[];
   onClose: () => void;
   onAskAbout: (node: SelectedNodeData) => void;
   onQuizNode: (node: SelectedNodeData) => void;
@@ -45,10 +49,18 @@ const NODE_TYPE_CONFIG: Record<string, { label: string; style: string; icon: Rea
   application: { label: getKnowledgeGraphNodeTypeLabel("application"), style: "bg-orange-100 text-orange-700 border-orange-200", icon: AppWindow },
 };
 
+const ISSUE_STYLES: Record<string, string> = {
+  critical: "border-rose-200 bg-rose-50 text-rose-800",
+  high: "border-orange-200 bg-orange-50 text-orange-800",
+  medium: "border-amber-200 bg-amber-50 text-amber-800",
+  low: "border-sky-200 bg-sky-50 text-sky-800",
+};
+
 export default function NodeDetailPanel({
   node,
   progressStatus,
   recommendation,
+  qaIssues = [],
   onClose,
   onAskAbout,
   onQuizNode,
@@ -153,6 +165,26 @@ export default function NodeDetailPanel({
         {node.hasUnmetPrerequisites ? (
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             Nút này còn thiếu kiến thức tiên quyết. Bạn vẫn có thể xem trước, nhưng nên hoàn thành các nút nền tảng trước để đi đúng lộ trình.
+          </div>
+        ) : null}
+        {qaIssues.length ? (
+          <div className="mb-4 space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Graph QA Issues
+            </div>
+            {qaIssues.map((issue) => (
+              <div
+                key={issue.issue_id}
+                className={`rounded-xl border p-3 text-xs ${ISSUE_STYLES[issue.severity] ?? ISSUE_STYLES.low}`}
+              >
+                <div className="font-semibold">
+                  {getGraphQaSeverityLabel(issue.severity)}: {issue.message}
+                </div>
+                {issue.why_it_matters ? (
+                  <p className="mt-1 leading-relaxed opacity-90">{issue.why_it_matters}</p>
+                ) : null}
+              </div>
+            ))}
           </div>
         ) : null}
         {node.description ? (
