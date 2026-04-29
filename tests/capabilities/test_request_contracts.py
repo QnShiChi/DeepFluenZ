@@ -24,3 +24,31 @@ def test_validate_capability_config_allows_deep_question_graph_context_as_runtim
         "paper_path": "",
         "max_questions": 10,
     }
+
+
+def test_validate_capability_config_allows_deep_question_remediation_graph_context() -> None:
+    config = validate_capability_config(
+        "deep_question",
+        {
+            "mode": "custom",
+            "num_questions": 2,
+            "graph_context": {
+                "course_id": "intro-ai",
+                "node_id": "topic_search",
+                "quiz_kind": "remediation_quiz",
+                "target_node_id": "topic_intro",
+                "weak_concepts": ["state_space"],
+            },
+        },
+    )
+
+    assert config == {
+        "mode": "custom",
+        "topic": "",
+        "num_questions": 2,
+        "difficulty": "",
+        "question_type": "",
+        "preference": "",
+        "paper_path": "",
+        "max_questions": 10,
+    }

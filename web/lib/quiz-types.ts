@@ -39,6 +39,10 @@ export interface QuizQuestion {
   graph_context?: {
     course_id: string;
     node_id: string;
+    quiz_kind?: "node_quiz" | "remediation_quiz";
+    target_node_id?: string;
+    weak_concepts?: string[];
+    node_difficulty?: string;
   };
 }
 
@@ -81,6 +85,23 @@ export function extractQuizQuestions(
         ? {
             course_id: graphContextRaw.course_id,
             node_id: graphContextRaw.node_id,
+            quiz_kind:
+              graphContextRaw.quiz_kind === "node_quiz" || graphContextRaw.quiz_kind === "remediation_quiz"
+                ? graphContextRaw.quiz_kind
+                : undefined,
+            target_node_id:
+              typeof graphContextRaw.target_node_id === "string"
+                ? graphContextRaw.target_node_id
+                : undefined,
+            weak_concepts: Array.isArray(graphContextRaw.weak_concepts)
+              ? graphContextRaw.weak_concepts.filter(
+                  (concept): concept is string => typeof concept === "string" && concept.length > 0,
+                )
+              : undefined,
+            node_difficulty:
+              typeof graphContextRaw.node_difficulty === "string"
+                ? graphContextRaw.node_difficulty
+                : undefined,
           }
         : undefined;
     const question: QuizQuestion = {
