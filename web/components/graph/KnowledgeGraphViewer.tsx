@@ -36,9 +36,7 @@ import {
   writeStoredKnowledgeGraphState,
 } from "@/lib/knowledge-graph-state";
 import {
-  getGraphQaDraft,
   getGraphQaReport,
-  type GraphQaDraft,
   type GraphQaIssue,
   type GraphQaReport,
 } from "@/lib/graph-qa-api";
@@ -119,7 +117,6 @@ export default function KnowledgeGraphViewer({
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const [qaReport, setQaReport] = useState<GraphQaReport | null>(null);
-  const [qaDraft, setQaDraft] = useState<GraphQaDraft | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const buildIssuesByNodeId = useCallback((report: GraphQaReport | null): IssuesByNodeId => {
@@ -252,12 +249,8 @@ export default function KnowledgeGraphViewer({
   }, [buildIssuesByNodeId, qaReport]);
 
   const refreshGraphQa = useCallback(async (targetCourseId: string) => {
-    const [report, draft] = await Promise.all([
-      getGraphQaReport(targetCourseId).catch(() => null),
-      getGraphQaDraft(targetCourseId).catch(() => null),
-    ]);
+    const report = await getGraphQaReport(targetCourseId).catch(() => null);
     setQaReport(report);
-    setQaDraft(draft);
   }, []);
 
   const handleAnalyzeGraph = useCallback(() => {
@@ -273,7 +266,6 @@ export default function KnowledgeGraphViewer({
       })
       .then((report) => {
         setQaReport(report);
-        void getGraphQaDraft(courseId).then(setQaDraft).catch(() => setQaDraft(null));
       })
       .catch(() => {
         void refreshGraphQa(courseId);
@@ -470,7 +462,6 @@ export default function KnowledgeGraphViewer({
   useEffect(() => {
     if (!courseId) {
       setQaReport(null);
-      setQaDraft(null);
       return;
     }
 
@@ -638,7 +629,6 @@ export default function KnowledgeGraphViewer({
       </div>
       <GraphHealthPanel
         report={qaReport}
-        draft={qaDraft}
         onAnalyze={handleAnalyzeGraph}
         onFocusIssue={handleFocusIssue}
       />

@@ -1,6 +1,6 @@
 import React from "react";
 
-import type { GraphQaDraft, GraphQaIssue, GraphQaReport } from "@/lib/graph-qa-api";
+import type { GraphQaIssue, GraphQaReport } from "@/lib/graph-qa-api";
 import {
   describeAdaptiveGateStatus,
   getGraphQaSeverityLabel,
@@ -9,7 +9,6 @@ import {
 
 export interface GraphHealthPanelProps {
   report: GraphQaReport | null;
-  draft: GraphQaDraft | null;
   onAnalyze: () => void;
   onFocusIssue: (issue: GraphQaIssue) => void;
 }
@@ -23,7 +22,6 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 export default function GraphHealthPanel({
   report,
-  draft,
   onAnalyze,
   onFocusIssue,
 }: GraphHealthPanelProps) {
@@ -47,7 +45,7 @@ export default function GraphHealthPanel({
       </div>
 
       {report ? (
-        <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
           <div className="rounded-xl bg-slate-50 px-2 py-2 text-slate-600">
             <div className="font-semibold text-slate-900">{report.health_summary.score}</div>
             <div>Score</div>
@@ -59,10 +57,6 @@ export default function GraphHealthPanel({
           <div className="rounded-xl bg-orange-50 px-2 py-2 text-orange-700">
             <div className="font-semibold">{report.health_summary.high_count}</div>
             <div>High</div>
-          </div>
-          <div className="rounded-xl bg-amber-50 px-2 py-2 text-amber-700">
-            <div className="font-semibold">{draft?.changes.length ?? 0}</div>
-            <div>Draft</div>
           </div>
         </div>
       ) : (
