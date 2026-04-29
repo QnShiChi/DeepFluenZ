@@ -1,5 +1,6 @@
 from deeptutor.services.graph.models import CourseKnowledgeGraph
 from deeptutor.services.graph.remediation import (
+    build_remediation_cache_key,
     clear_completed_remediation,
     create_or_update_remediation_state,
     mark_remediation_mini_quiz_passed,
@@ -110,3 +111,8 @@ def test_remediation_state_clears_only_after_mini_quiz_and_main_quiz_pass() -> N
         passed_node_id="topic_search",
     )
     assert cleared["active_remediation"] is None
+
+
+def test_build_remediation_cache_key_uses_target_and_sorted_concepts() -> None:
+    key = build_remediation_cache_key("topic_intro", ["search_tree", "state_space"])
+    assert key == "topic_intro::search_tree|state_space"

@@ -87,6 +87,11 @@ export interface QuizResultItem {
 export interface GraphQuizContext {
   course_id: string;
   node_id: string;
+  quiz_kind?: "node_quiz" | "remediation_quiz";
+  target_node_id?: string;
+  weak_concepts?: string[];
+  node_difficulty?: string;
+  question_concept_map?: Record<string, string[]>;
 }
 
 export interface SessionExamAttemptSummary {

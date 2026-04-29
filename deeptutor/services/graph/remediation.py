@@ -5,6 +5,11 @@ from collections import defaultdict
 from deeptutor.services.graph.models import CourseKnowledgeGraph
 
 
+def build_remediation_cache_key(target_node_id: str, weak_concepts: list[str]) -> str:
+    normalized = "|".join(sorted({concept.strip() for concept in weak_concepts if concept.strip()}))
+    return f"{target_node_id}::{normalized}"
+
+
 def _build_prerequisites(graph: CourseKnowledgeGraph) -> dict[str, list[str]]:
     prerequisites: dict[str, list[str]] = defaultdict(list)
     for edge in graph.edges:
