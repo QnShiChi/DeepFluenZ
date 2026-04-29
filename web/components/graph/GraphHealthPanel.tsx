@@ -12,8 +12,6 @@ export interface GraphHealthPanelProps {
   draft: GraphQaDraft | null;
   onAnalyze: () => void;
   onFocusIssue: (issue: GraphQaIssue) => void;
-  onApplyFix: (fixId: string) => void;
-  onStageSafeFixes: () => void;
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -28,11 +26,8 @@ export default function GraphHealthPanel({
   draft,
   onAnalyze,
   onFocusIssue,
-  onApplyFix,
-  onStageSafeFixes,
 }: GraphHealthPanelProps) {
   const grouped = groupGraphQaIssues(report?.issues ?? []);
-  const safeFixes = (report?.suggested_fixes ?? []).filter((fix) => fix.safe_for_bulk_apply);
 
   return (
     <aside className="absolute top-20 right-4 z-10 w-80 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur">
@@ -75,23 +70,6 @@ export default function GraphHealthPanel({
           Analyze the graph to load prerequisite and connectivity issues.
         </p>
       )}
-
-      {report && safeFixes.length ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={onStageSafeFixes}
-            className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-800"
-          >
-            Stage {safeFixes.length} Safe Fix{safeFixes.length === 1 ? "" : "es"}
-          </button>
-          <button
-            onClick={() => onApplyFix(safeFixes[0].fix_id)}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            Apply Top Fix
-          </button>
-        </div>
-      ) : null}
 
       <section className="mt-4 space-y-3">
         {(["critical", "high", "medium", "low"] as const).map((severity) => {

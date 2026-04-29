@@ -36,10 +36,8 @@ import {
   writeStoredKnowledgeGraphState,
 } from "@/lib/knowledge-graph-state";
 import {
-  applyGraphQaFix,
   getGraphQaDraft,
   getGraphQaReport,
-  stageGraphQaFixes,
   type GraphQaDraft,
   type GraphQaIssue,
   type GraphQaReport,
@@ -291,37 +289,6 @@ export default function KnowledgeGraphViewer({
     setCurrentNodeId(targetNode.id);
     persistRuntimeState(targetNode.id, dynamicNodes);
   }, [dynamicNodes, nodes, persistRuntimeState, selectNode]);
-
-  const handleApplyFix = useCallback((fixId: string) => {
-    if (!courseId) return;
-    void applyGraphQaFix(courseId, fixId)
-      .then((report) => {
-        setQaReport(report);
-        return getGraphQaDraft(courseId).catch(() => null);
-      })
-      .then((draft) => {
-        setQaDraft(draft);
-      })
-      .catch(() => {
-        void refreshGraphQa(courseId);
-      });
-  }, [courseId, refreshGraphQa]);
-
-  const handleStageSafeFixes = useCallback(() => {
-    if (!courseId || !qaReport) return;
-    const safeFixIds = qaReport.suggested_fixes
-      .filter((fix) => fix.safe_for_bulk_apply)
-      .map((fix) => fix.fix_id);
-    if (!safeFixIds.length) return;
-
-    void stageGraphQaFixes(courseId, safeFixIds)
-      .then((draft) => {
-        setQaDraft(draft);
-      })
-      .catch(() => {
-        void refreshGraphQa(courseId);
-      });
-  }, [courseId, qaReport, refreshGraphQa]);
 
   const updateNodeProgress = useCallback((
     nodeId: string,
@@ -674,8 +641,6 @@ export default function KnowledgeGraphViewer({
         draft={qaDraft}
         onAnalyze={handleAnalyzeGraph}
         onFocusIssue={handleFocusIssue}
-        onApplyFix={handleApplyFix}
-        onStageSafeFixes={handleStageSafeFixes}
       />
       <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>
         <Background />
