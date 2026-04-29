@@ -18,7 +18,9 @@ import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 import QuestionFollowupPanel, {
   type FollowupThreadState,
 } from "@/components/quiz/QuestionFollowupPanel";
+import { useUnifiedChat } from "@/context/UnifiedChatContext";
 import { getUserAnswer, isQuizAnswerCorrect } from "@/lib/quiz-grading";
+import { buildGraphRemediationRequest } from "@/lib/knowledge-graph-actions";
 import { buildQuizFollowupConfig, type QuizQuestion } from "@/lib/quiz-types";
 import { describeRemediationCtaSet, didPassGraphQuiz } from "@/lib/remediation-ui";
 import {
@@ -71,6 +73,7 @@ export default function QuizViewer({
   language = "en",
 }: QuizViewerProps) {
   const { t } = useTranslation();
+  const { sendMessage } = useUnifiedChat();
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [threads, setThreads] = useState<Record<string, FollowupThreadState>>({});
@@ -495,13 +498,18 @@ export default function QuizViewer({
   }, [handleReset]);
 
   const handleStartRemediation = useCallback(() => {
-    if (!graphContext || typeof window === "undefined") return;
-    window.dispatchEvent(
-      new CustomEvent("deeptutor:start-graph-remediation", {
-        detail: graphContext,
-      }),
-    );
-  }, [graphContext]);
+    if (!graphContext) return;
+    const request = buildGraphRemediationRequest({
+      courseId: graphContext.course_id,
+      sourceNodeId: graphContext.node_id,
+      targetNodeId: graphContext.target_node_id || graphContext.node_id,
+      weakConcepts: graphContext.weak_concepts || [],
+      nodeDifficulty: graphContext.node_difficulty || q?.difficulty || "medium",
+      attemptCount: 0,
+      language,
+    });
+    sendMessage(request.content, undefined, request.config, undefined, undefined, request.options);
+  }, [graphContext, language, q?.difficulty, sendMessage]);
 
   const handleBackToGraph = useCallback(() => {
     if (typeof window === "undefined") return;

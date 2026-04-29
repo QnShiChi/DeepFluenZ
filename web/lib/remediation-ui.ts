@@ -17,3 +17,8 @@ export function didPassGraphQuiz(correctCount: number, questionCount: number): b
   if (questionCount <= 0) return false;
   return correctCount >= getGraphQuizPassThreshold(questionCount);
 }
+
+export function getRemediationQuizCount(nodeDifficulty: string, attemptCount: number): number {
+  const base = { easy: 2, medium: 3, hard: 4 }[nodeDifficulty] ?? 3;
+  return Math.min(base + (attemptCount > 0 ? 1 : 0), 5);
+}

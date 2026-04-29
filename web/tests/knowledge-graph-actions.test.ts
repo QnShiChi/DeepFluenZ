@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildKnowledgeGraphQuizMessage } from "../lib/knowledge-graph-actions.ts";
+import {
+  buildGraphRemediationRequest,
+  buildKnowledgeGraphQuizMessage,
+} from "../lib/knowledge-graph-actions.ts";
 
 test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB or rag coupling", () => {
   const request = buildKnowledgeGraphQuizMessage(
@@ -35,4 +38,28 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB
   assert.deepEqual(request.options.requestSnapshotOverride?.knowledgeBases, []);
   assert.equal(request.options.requestSnapshotOverride?.language, "vi");
   assert.ok(!("language" in request.config));
+});
+
+test("buildGraphRemediationRequest creates a remediation lesson payload", () => {
+  const request = buildGraphRemediationRequest({
+    courseId: "intro-ai",
+    sourceNodeId: "topic_search",
+    targetNodeId: "topic_intro",
+    weakConcepts: ["state_space"],
+    nodeDifficulty: "easy",
+    attemptCount: 0,
+    language: "vi",
+  });
+
+  assert.equal(request.options.displayUserMessage, false);
+  assert.equal(request.options.persistUserMessage, false);
+  assert.equal(request.options.requestSnapshotOverride?.capability, "deep_question");
+  assert.equal(
+    (request.config.graph_context as { quiz_kind?: string }).quiz_kind,
+    "remediation_quiz",
+  );
+  assert.equal(
+    (request.config.graph_context as { target_node_id?: string }).target_node_id,
+    "topic_intro",
+  );
 });

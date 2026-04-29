@@ -77,6 +77,10 @@ class DeepQuestionCapability(BaseCapability):
                 await stream.result(followup_payload, source=self.name)
             return
 
+        graph_context = overrides.get("graph_context")
+        if isinstance(graph_context, dict):
+            overrides = self._normalize_graph_quiz_overrides(overrides, graph_context)
+
         mode = str(overrides.get("mode", "custom") or "custom").strip().lower()
         topic = str(overrides.get("topic") or context.user_message or "").strip()
         num_questions = int(overrides.get("num_questions", 1) or 1)
@@ -174,6 +178,12 @@ class DeepQuestionCapability(BaseCapability):
                 history_context=history_context,
             )
 
+        if isinstance(graph_context, dict) and graph_context.get("quiz_kind") == "remediation_quiz":
+            result = self._normalize_remediation_result(
+                result,
+                question_count=num_questions,
+            )
+
         content = self._render_summary_markdown(result)
         if content:
             await stream.content(content, source=self.name, stage="generation")
@@ -183,13 +193,59 @@ class DeepQuestionCapability(BaseCapability):
             "summary": result,
             "mode": mode,
         }
-        graph_context = overrides.get("graph_context")
         if isinstance(graph_context, dict):
             result_payload["graph_context"] = graph_context
         cost_meta = self._collect_cost_summary("question")
         if cost_meta:
             result_payload["metadata"] = {"cost_summary": cost_meta}
         await stream.result(result_payload, source=self.name)
+
+    @staticmethod
+    def _normalize_graph_quiz_overrides(
+        overrides: dict[str, Any],
+        graph_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        if graph_context.get("quiz_kind") != "remediation_quiz":
+            return overrides
+
+        next_overrides = dict(overrides)
+        requested_question_count = int(graph_context.get("requested_question_count", 2) or 2)
+        next_overrides["num_questions"] = requested_question_count
+        next_overrides["question_type"] = "choice"
+        preference = str(next_overrides.get("preference", "") or "").strip()
+        normalized_preference = "multiple_choice only"
+        next_overrides["preference"] = (
+            f"{normalized_preference}; {preference}" if preference else normalized_preference
+        )
+        return next_overrides
+
+    @staticmethod
+    def _normalize_remediation_result(
+        result: dict[str, Any],
+        *,
+        question_count: int,
+    ) -> dict[str, Any]:
+        raw_results = result.get("results")
+        if not isinstance(raw_results, list):
+            return result
+
+        normalized_results: list[dict[str, Any]] = []
+        for item in raw_results[:question_count]:
+            if not isinstance(item, dict):
+                continue
+            qa_pair = item.get("qa_pair")
+            if not isinstance(qa_pair, dict):
+                normalized_results.append(item)
+                continue
+            next_item = dict(item)
+            next_pair = dict(qa_pair)
+            next_pair["question_type"] = "choice"
+            next_item["qa_pair"] = next_pair
+            normalized_results.append(next_item)
+
+        next_result = dict(result)
+        next_result["results"] = normalized_results
+        return next_result
 
     @staticmethod
     def _collect_cost_summary(module_name: str) -> dict[str, Any] | None:

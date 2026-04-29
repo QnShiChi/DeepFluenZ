@@ -92,6 +92,7 @@ export interface GraphQuizContext {
   weak_concepts?: string[];
   node_difficulty?: string;
   question_concept_map?: Record<string, string[]>;
+  requested_question_count?: number;
 }
 
 export interface SessionExamAttemptSummary {
