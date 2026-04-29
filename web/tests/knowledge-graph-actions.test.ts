@@ -24,13 +24,16 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB
   assert.equal(request.content, "Trí Tuệ Nhân Tạo Ứng Dụng");
   assert.deepEqual(request.config, {
     mode: "custom",
-    num_questions: 3,
+    num_questions: 5,
     difficulty: "medium",
-    question_type: "",
-    preference: "",
+    question_type: "choice",
+    preference: "multiple_choice only",
     graph_context: {
       course_id: "intro-ai",
       node_id: "topic_intro",
+      quiz_kind: "node_quiz",
+      node_difficulty: "medium",
+      requested_question_count: 5,
     },
   });
   assert.equal(request.options.requestSnapshotOverride?.capability, "deep_question");

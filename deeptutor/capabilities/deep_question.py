@@ -205,11 +205,14 @@ class DeepQuestionCapability(BaseCapability):
         overrides: dict[str, Any],
         graph_context: dict[str, Any],
     ) -> dict[str, Any]:
-        if graph_context.get("quiz_kind") != "remediation_quiz":
+        quiz_kind = str(graph_context.get("quiz_kind", "") or "").strip()
+        if quiz_kind not in {"node_quiz", "remediation_quiz"}:
             return overrides
 
         next_overrides = dict(overrides)
-        requested_question_count = int(graph_context.get("requested_question_count", 2) or 2)
+        requested_question_count = int(
+            graph_context.get("requested_question_count", next_overrides.get("num_questions", 1)) or 1
+        )
         next_overrides["num_questions"] = requested_question_count
         next_overrides["question_type"] = "choice"
         preference = str(next_overrides.get("preference", "") or "").strip()

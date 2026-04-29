@@ -22,3 +22,7 @@ export function getRemediationQuizCount(nodeDifficulty: string, attemptCount: nu
   const base = { easy: 2, medium: 3, hard: 4 }[nodeDifficulty] ?? 3;
   return Math.min(base + (attemptCount > 0 ? 1 : 0), 5);
 }
+
+export function getNodeQuizCount(nodeDifficulty: string): number {
+  return { easy: 3, medium: 5, hard: 7 }[nodeDifficulty] ?? 5;
+}

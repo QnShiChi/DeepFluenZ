@@ -145,3 +145,73 @@ def test_remediation_request_generates_multiple_choice_quiz_artifact(
         assert result_event.metadata["graph_context"]["quiz_kind"] == "remediation_quiz"
 
     asyncio.run(_run())
+
+
+def test_node_quiz_request_generates_multiple_choice_quiz_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeCoordinator:
+        def __init__(self, **kwargs: Any) -> None:
+            captured["init"] = kwargs
+            self._callback = None
+
+        def set_ws_callback(self, callback) -> None:
+            self._callback = callback
+
+        async def generate_from_topic(self, **kwargs: Any) -> dict[str, Any]:
+            captured["topic_call"] = kwargs
+            await self._callback({"type": "idea_round", "message": "ideas"})
+            return {
+                "results": [
+                    {
+                        "qa_pair": {
+                            "question_id": "q_1",
+                            "question": "What is encapsulation?",
+                            "question_type": "written",
+                            "options": {"A": "A", "B": "B", "C": "C", "D": "D"},
+                            "correct_answer": "A",
+                            "explanation": "Encapsulation groups data and behavior.",
+                        }
+                    }
+                ]
+            }
+
+    _install_module(
+        monkeypatch,
+        "deeptutor.agents.question.coordinator",
+        AgentCoordinator=FakeCoordinator,
+    )
+    _install_module(
+        monkeypatch,
+        "deeptutor.services.llm.config",
+        get_llm_config=lambda: SimpleNamespace(api_key="k", base_url="u", api_version="v1"),
+    )
+
+    async def _run() -> None:
+        context = UnifiedContext(
+            user_message="oop fundamentals",
+            config_overrides={
+                "mode": "custom",
+                "topic": "oop fundamentals",
+                "graph_context": {
+                    "course_id": "intro-oop",
+                    "node_id": "topic_oop_intro",
+                    "quiz_kind": "node_quiz",
+                    "node_difficulty": "medium",
+                    "requested_question_count": 5,
+                },
+            },
+            language="en",
+        )
+        capability = DeepQuestionCapability()
+        events = await _collect_events(lambda bus: capability.run(context, bus))
+
+        assert captured["topic_call"]["num_questions"] == 5
+        assert captured["topic_call"]["question_type"] == "choice"
+        assert "multiple_choice only" in captured["topic_call"]["preference"]
+        result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+        assert result_event.metadata["graph_context"]["quiz_kind"] == "node_quiz"
+
+    asyncio.run(_run())

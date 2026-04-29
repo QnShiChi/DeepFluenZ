@@ -1,6 +1,6 @@
 import type { MessageRequestSnapshot, SendMessageOptions } from "../context/UnifiedChatContext.tsx";
 import { DEFAULT_QUIZ_CONFIG, buildQuizWSConfig } from "./quiz-types.ts";
-import { getRemediationQuizCount } from "./remediation-ui.ts";
+import { getNodeQuizCount, getRemediationQuizCount } from "./remediation-ui.ts";
 
 export interface KnowledgeGraphNodeActionInput {
   id: string;
@@ -23,17 +23,23 @@ export function buildKnowledgeGraphQuizMessage(
   config: Record<string, unknown>;
   options: SendMessageOptions;
 } {
+  const questionCount = getNodeQuizCount(node.difficulty || "medium");
   const config = buildQuizWSConfig({
     ...DEFAULT_QUIZ_CONFIG,
     mode: "custom",
     topic: node.title,
-    num_questions: 3,
+    num_questions: questionCount,
     difficulty: node.difficulty || "medium",
+    question_type: "choice",
+    preference: "multiple_choice only",
   });
   const graphContext = node.courseId
     ? {
         course_id: node.courseId,
         node_id: node.id,
+        quiz_kind: "node_quiz",
+        node_difficulty: node.difficulty || "medium",
+        requested_question_count: questionCount,
       }
     : undefined;
   const finalConfig = graphContext
