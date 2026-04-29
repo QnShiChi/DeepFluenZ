@@ -83,6 +83,20 @@ def mark_remediation_mini_quiz_passed(
     return next_state
 
 
+def mark_remediation_mini_quiz_failed(
+    current_state: dict[str, object],
+    *,
+    score_ratio: float,
+) -> dict[str, object]:
+    next_state = dict(current_state)
+    active = dict(next_state.get("active_remediation") or {})
+    active["status"] = "recommended"
+    active["attempt_count"] = int(active.get("attempt_count", 0) or 0) + 1
+    active["last_remediation_quiz_score"] = score_ratio
+    next_state["active_remediation"] = active
+    return next_state
+
+
 def clear_completed_remediation(
     current_state: dict[str, object],
     *,

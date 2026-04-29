@@ -140,3 +140,104 @@ def test_submit_graph_quiz_success_clears_completed_remediation(store: SQLiteSes
     assert state is not None
     assert state["active_remediation"] is None
     assert "topic_search" in state["mastered_nodes"]
+
+
+def test_submit_remediation_quiz_success_marks_passed_mini_quiz(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Quiz Session"))
+    _seed_course(store)
+    asyncio.run(
+        store.upsert_student_state(
+            session["id"],
+            "intro-ai",
+            {
+                "current_node_id": "topic_search",
+                "mastered_nodes": ["topic_intro"],
+                "explored_nodes": ["topic_search"],
+                "weak_node_ids": ["topic_search"],
+                "dynamic_nodes": [],
+                "active_remediation": {
+                    "source_node_id": "topic_search",
+                    "target_node_id": "topic_intro",
+                    "weak_concepts": ["state_space"],
+                    "failure_severity": "moderate",
+                    "status": "recommended",
+                    "attempt_count": 0,
+                    "last_node_quiz_score": 0.4,
+                    "last_remediation_quiz_score": None,
+                },
+                "remediation_cache": {},
+            },
+        )
+    )
+    payload = sessions_module.QuizResultsRequest.model_validate(
+        {
+            "answers": _graph_quiz_answers([True, True]),
+            "graph_context": {
+                "course_id": "intro-ai",
+                "node_id": "topic_search",
+                "target_node_id": "topic_intro",
+                "quiz_kind": "remediation_quiz",
+                "node_difficulty": "easy",
+                "weak_concepts": ["state_space"],
+            },
+        }
+    )
+
+    response = asyncio.run(sessions_module.record_quiz_results(session["id"], payload))
+
+    assert response["recorded"] is True
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+    assert state is not None
+    assert state["active_remediation"]["status"] == "passed_mini_quiz"
+    assert "topic_search" not in state["mastered_nodes"]
+
+
+def test_submit_remediation_quiz_failure_increments_attempt_count(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Quiz Session"))
+    _seed_course(store)
+    asyncio.run(
+        store.upsert_student_state(
+            session["id"],
+            "intro-ai",
+            {
+                "current_node_id": "topic_search",
+                "mastered_nodes": ["topic_intro"],
+                "explored_nodes": ["topic_search"],
+                "weak_node_ids": ["topic_search"],
+                "dynamic_nodes": [],
+                "active_remediation": {
+                    "source_node_id": "topic_search",
+                    "target_node_id": "topic_intro",
+                    "weak_concepts": ["state_space"],
+                    "failure_severity": "moderate",
+                    "status": "recommended",
+                    "attempt_count": 0,
+                    "last_node_quiz_score": 0.4,
+                    "last_remediation_quiz_score": None,
+                },
+                "remediation_cache": {},
+            },
+        )
+    )
+    payload = sessions_module.QuizResultsRequest.model_validate(
+        {
+            "answers": _graph_quiz_answers([False, False]),
+            "graph_context": {
+                "course_id": "intro-ai",
+                "node_id": "topic_search",
+                "target_node_id": "topic_intro",
+                "quiz_kind": "remediation_quiz",
+                "node_difficulty": "easy",
+                "weak_concepts": ["state_space"],
+            },
+        }
+    )
+
+    response = asyncio.run(sessions_module.record_quiz_results(session["id"], payload))
+
+    assert response["recorded"] is True
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+    assert state is not None
+    assert state["active_remediation"]["status"] == "recommended"
+    assert state["active_remediation"]["attempt_count"] == 1
+    assert state["active_remediation"]["last_remediation_quiz_score"] == 0.0

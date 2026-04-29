@@ -18,6 +18,8 @@ from deeptutor.services.graph.quiz_policy import (
 from deeptutor.services.graph.remediation import (
     clear_completed_remediation,
     create_or_update_remediation_state,
+    mark_remediation_mini_quiz_failed,
+    mark_remediation_mini_quiz_passed,
     resolve_remediation_target,
 )
 from deeptutor.services.session import get_sqlite_session_store
@@ -148,29 +150,40 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
             score_ratio = (correct / question_count) if question_count else 0.0
             quiz_kind = str(graph_context.get("quiz_kind", "node_quiz") or "node_quiz").strip() or "node_quiz"
             pass_threshold = determine_graph_quiz_pass_threshold(question_count)
-            mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
-            graph_updated = await store.record_graph_quiz_outcome(
-                session_id,
-                course_id,
-                node_id,
-                score_ratio,
-                mastery_threshold=mastery_threshold,
-            )
-            if quiz_kind == "node_quiz":
+            state = await store.get_student_state(session_id, course_id) or {
+                "current_node_id": "",
+                "mastered_nodes": [],
+                "explored_nodes": [],
+                "weak_node_ids": [],
+                "dynamic_nodes": [],
+                "active_remediation": None,
+                "remediation_cache": {},
+            }
+
+            if quiz_kind == "remediation_quiz":
+                passed = correct >= pass_threshold
+                state = (
+                    mark_remediation_mini_quiz_passed(state, score_ratio=score_ratio)
+                    if passed
+                    else mark_remediation_mini_quiz_failed(state, score_ratio=score_ratio)
+                )
+                await store.upsert_student_state(session_id, course_id, state)
+                graph_updated = True
+            else:
+                mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
+                graph_updated = await store.record_graph_quiz_outcome(
+                    session_id,
+                    course_id,
+                    node_id,
+                    score_ratio,
+                    mastery_threshold=mastery_threshold,
+                )
+                state = await store.get_student_state(session_id, course_id) or state
                 template = await store.get_course_template(course_id)
                 graph = None
                 if template and isinstance(template.get("template_json"), str):
                     graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
 
-                state = await store.get_student_state(session_id, course_id) or {
-                    "current_node_id": "",
-                    "mastered_nodes": [],
-                    "explored_nodes": [],
-                    "weak_node_ids": [],
-                    "dynamic_nodes": [],
-                    "active_remediation": None,
-                    "remediation_cache": {},
-                }
                 passed = correct >= pass_threshold
                 question_concept_map = graph_context.get("question_concept_map")
                 concept_map = question_concept_map if isinstance(question_concept_map, dict) else {}

@@ -3,6 +3,7 @@ from deeptutor.services.graph.remediation import (
     build_remediation_cache_key,
     clear_completed_remediation,
     create_or_update_remediation_state,
+    mark_remediation_mini_quiz_failed,
     mark_remediation_mini_quiz_passed,
     resolve_remediation_target,
 )
@@ -116,3 +117,20 @@ def test_remediation_state_clears_only_after_mini_quiz_and_main_quiz_pass() -> N
 def test_build_remediation_cache_key_uses_target_and_sorted_concepts() -> None:
     key = build_remediation_cache_key("topic_intro", ["search_tree", "state_space"])
     assert key == "topic_intro::search_tree|state_space"
+
+
+def test_mark_remediation_mini_quiz_failed_increments_attempt_count() -> None:
+    state = create_or_update_remediation_state(
+        current_state={},
+        source_node_id="topic_search",
+        target_node_id="topic_intro",
+        weak_concepts=["state_space"],
+        failure_severity="moderate",
+        score_ratio=0.4,
+    )
+
+    failed = mark_remediation_mini_quiz_failed(state, score_ratio=0.5)
+
+    assert failed["active_remediation"]["status"] == "recommended"
+    assert failed["active_remediation"]["attempt_count"] == 1
+    assert failed["active_remediation"]["last_remediation_quiz_score"] == 0.5
