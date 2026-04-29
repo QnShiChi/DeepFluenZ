@@ -73,6 +73,22 @@ def recommend_next_graph_node(
     mastered = set(student_state.get("mastered_nodes", []) or [])
     explored = set(student_state.get("explored_nodes", []) or [])
     current_node_id = str(student_state.get("current_node_id", "") or "")
+    active_remediation = student_state.get("active_remediation") or {}
+    remediation_target_id = str(active_remediation.get("target_node_id", "") or "")
+
+    if remediation_target_id:
+        backup_candidates = [
+            node.node_id
+            for node in graph.nodes
+            if node.node_id not in {remediation_target_id, *mastered}
+        ][:2]
+        return GraphRecommendation(
+            recommended_node_id=remediation_target_id,
+            mode="remediate",
+            score=0.99,
+            reason_codes=["recent_quiz_weakness"],
+            backup_node_ids=backup_candidates,
+        )
 
     prerequisites, downstream = _build_prerequisite_maps(graph)
     weak_nodes = set(student_state.get("weak_node_ids", []) or [])

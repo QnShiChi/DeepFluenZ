@@ -158,3 +158,29 @@ def test_recommend_next_graph_node_returns_remediation_prerequisite_for_recent_w
     assert recommendation.recommended_node_id == "topic_search"
     assert recommendation.mode == "remediate"
     assert "recent_quiz_weakness" in recommendation.reason_codes
+
+
+def test_recommend_next_graph_node_prioritizes_active_remediation_target() -> None:
+    recommendation = recommend_next_graph_node(
+        graph=build_graph(),
+        student_state={
+            "current_node_id": "topic_planning",
+            "mastered_nodes": ["topic_intro"],
+            "explored_nodes": ["topic_search"],
+            "active_remediation": {
+                "source_node_id": "topic_planning",
+                "target_node_id": "topic_search",
+                "weak_concepts": ["state_space"],
+                "failure_severity": "moderate",
+                "status": "recommended",
+                "attempt_count": 0,
+                "last_node_quiz_score": 0.4,
+                "last_remediation_quiz_score": None,
+            },
+        },
+    )
+
+    assert recommendation.recommended_node_id == "topic_search"
+    assert recommendation.mode == "remediate"
+    assert "recent_quiz_weakness" in recommendation.reason_codes
+    assert recommendation.backup_node_ids
