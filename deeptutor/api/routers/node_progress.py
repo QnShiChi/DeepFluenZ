@@ -37,6 +37,7 @@ class NodeProgressResponse(BaseModel):
     progress: dict[str, str]  # {node_id: "explored" | "mastered"}
     current_node_id: str = ""
     dynamic_nodes: list[dict[str, object]] = []
+    active_remediation: dict[str, object] | None = None
 
 
 @router.post("/graph/node-progress", response_model=MarkProgressResponse)
@@ -70,4 +71,5 @@ async def get_node_progress(course_id: str, session_id: str):
         progress=progress,
         current_node_id=str((state or {}).get("current_node_id", "") or ""),
         dynamic_nodes=list((state or {}).get("dynamic_nodes", []) or []),
+        active_remediation=(state or {}).get("active_remediation"),
     )

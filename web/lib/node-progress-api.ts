@@ -9,10 +9,22 @@ export interface DynamicKnowledgeGraphNode {
   dependencies: string[];
 }
 
+export interface ActiveGraphRemediationSnapshot {
+  source_node_id: string;
+  target_node_id: string;
+  weak_concepts: string[];
+  failure_severity: string;
+  status: string;
+  attempt_count: number;
+  last_node_quiz_score?: number | null;
+  last_remediation_quiz_score?: number | null;
+}
+
 export interface NodeProgressSnapshot {
   progress: Record<string, NodeStatus>;
   current_node_id: string;
   dynamic_nodes: DynamicKnowledgeGraphNode[];
+  active_remediation: ActiveGraphRemediationSnapshot | null;
 }
 
 export async function markNodeProgress(
@@ -74,6 +86,7 @@ export async function getNodeProgress(
         progress: {},
         current_node_id: "",
         dynamic_nodes: [],
+        active_remediation: null,
       };
     }
     const data = await res.json();
@@ -81,12 +94,14 @@ export async function getNodeProgress(
       progress: (data.progress ?? {}) as Record<string, NodeStatus>,
       current_node_id: String(data.current_node_id ?? ""),
       dynamic_nodes: (data.dynamic_nodes ?? []) as DynamicKnowledgeGraphNode[],
+      active_remediation: (data.active_remediation ?? null) as ActiveGraphRemediationSnapshot | null,
     };
   } catch {
     return {
       progress: {},
       current_node_id: "",
       dynamic_nodes: [],
+      active_remediation: null,
     };
   }
 }

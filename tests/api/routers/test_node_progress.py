@@ -54,6 +54,16 @@ async def test_get_node_progress_returns_current_node_and_dynamic_nodes(
                     "dependencies": ["topic_intro"],
                 }
             ],
+            "active_remediation": {
+                "source_node_id": "topic_search",
+                "target_node_id": "topic_intro",
+                "weak_concepts": ["state_space"],
+                "failure_severity": "moderate",
+                "status": "recommended",
+                "attempt_count": 0,
+                "last_node_quiz_score": 0.4,
+                "last_remediation_quiz_score": None,
+            },
         },
     )
     monkeypatch.setattr(node_progress_module, "get_sqlite_session_store", lambda: store)
@@ -69,6 +79,8 @@ async def test_get_node_progress_returns_current_node_and_dynamic_nodes(
         "topic_search": "explored",
     }
     assert response.dynamic_nodes[0]["node_id"] == "sq_review_intro"
+    assert response.active_remediation is not None
+    assert response.active_remediation["target_node_id"] == "topic_intro"
 
 
 @pytest.mark.anyio

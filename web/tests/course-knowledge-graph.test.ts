@@ -224,6 +224,39 @@ test("mapCourseKnowledgeGraphToFlow marks the recommended node with styling meta
   assert.match(String(flow.nodes[0].style?.border), /3px/);
 });
 
+test("mapCourseKnowledgeGraphToFlow marks remediation target nodes", () => {
+  const flow = mapCourseKnowledgeGraphToFlow(
+    {
+      course_id: "intro-ai",
+      title: "Intro to AI",
+      source_type: "manual_json",
+      nodes: [
+        { node_id: "topic_intro", title: "Intro", node_type: "topic", description: "", difficulty: "easy" },
+        { node_id: "topic_search", title: "Search", node_type: "topic", description: "", difficulty: "medium" },
+      ],
+      edges: [],
+      audit: {
+        backbone_node_ids: ["topic_intro", "topic_search"],
+        enriched_node_ids: [],
+        backbone_edge_ids: [],
+        enriched_edge_ids: [],
+        warnings: [],
+      },
+    } as any,
+    {
+      recommendedNodeId: "topic_intro",
+      remediationState: {
+        sourceNodeId: "topic_search",
+        targetNodeId: "topic_intro",
+        status: "recommended",
+      },
+    },
+  );
+
+  const intro = flow.nodes.find((node) => node.id === "topic_intro");
+  assert.equal(intro?.data?.graphState, "needs_remediation");
+});
+
 test("mapCourseKnowledgeGraphToFlow marks unmet prerequisite nodes as locked and current node as in progress", () => {
   const flow = mapCourseKnowledgeGraphToFlow(
     {

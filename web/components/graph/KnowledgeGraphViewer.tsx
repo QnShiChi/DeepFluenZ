@@ -16,6 +16,7 @@ import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
 import { KNOWLEDGE_GRAPH_COPY } from "@/lib/knowledge-graph-copy";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
 import {
+  type ActiveGraphRemediationSnapshot,
   getNodeProgress,
   markNodeProgress,
   setCurrentGraphNode,
@@ -122,6 +123,7 @@ export default function KnowledgeGraphViewer({
   const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
   const [currentNodeId, setCurrentNodeId] = useState<string>("");
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
+  const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
@@ -164,6 +166,30 @@ export default function KnowledgeGraphViewer({
       qaSuggestedFixes: resolveNodeSuggestedFixes(node.id),
     });
   }, [courseId, qaReport, resolveNodeSuggestedFixes]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const nextNode = nodes.find((node) => node.id === selectedNode.id);
+    if (!nextNode) return;
+    setSelectedNode((prev) => {
+      if (!prev) return prev;
+      const nextGraphState = (nextNode.data as Record<string, unknown>).graphState as string | undefined;
+      const nextHasUnmetPrerequisites = Boolean(
+        (nextNode.data as Record<string, unknown>).hasUnmetPrerequisites,
+      );
+      if (
+        prev.graphState === nextGraphState &&
+        prev.hasUnmetPrerequisites === nextHasUnmetPrerequisites
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        graphState: nextGraphState,
+        hasUnmetPrerequisites: nextHasUnmetPrerequisites,
+      };
+    });
+  }, [nodes, selectedNode]);
 
   const persistRuntimeState = useCallback((nextCurrentNodeId: string, nextDynamicNodes: DynamicKnowledgeGraphNode[]) => {
     if (!courseId) return;
@@ -259,13 +285,20 @@ export default function KnowledgeGraphViewer({
         currentNodeId: runtimeState.currentNodeId,
         progressMap: currentProgress,
         issuesByNodeId: buildIssuesByNodeId(qaReport),
+        remediationState: activeRemediation
+          ? {
+              sourceNodeId: activeRemediation.source_node_id,
+              targetNodeId: activeRemediation.target_node_id,
+              status: activeRemediation.status,
+            }
+          : null,
       },
     );
     const styledNodes = flow.nodes.map((node) => styleNodeForProgress(node, currentProgress[node.id]));
 
     setNodes(styledNodes);
     setEdges(flow.edges);
-  }, [buildIssuesByNodeId, qaReport]);
+  }, [activeRemediation, buildIssuesByNodeId, qaReport]);
 
   const refreshGraphQa = useCallback(async (targetCourseId: string) => {
     const report = await getGraphQaReport(targetCourseId).catch(() => null);
@@ -515,7 +548,7 @@ export default function KnowledgeGraphViewer({
     });
     const progressPromise = shouldLoadProgress && sessionId
       ? getNodeProgress(sessionId, courseId)
-      : Promise.resolve({ progress: {}, current_node_id: "", dynamic_nodes: [] });
+      : Promise.resolve({ progress: {}, current_node_id: "", dynamic_nodes: [], active_remediation: null });
     const recommendationPromise = shouldLoadProgress && sessionId
       ? getGraphRecommendation(sessionId, courseId)
       : Promise.resolve(null);
@@ -537,6 +570,7 @@ export default function KnowledgeGraphViewer({
         setProgressMap(mergedProgress);
         setCurrentNodeId(mergedRuntimeState.currentNodeId);
         setDynamicNodes(mergedRuntimeState.dynamicNodes);
+        setActiveRemediation(progressSnapshot.active_remediation ?? null);
         persistRuntimeState(mergedRuntimeState.currentNodeId, mergedRuntimeState.dynamicNodes);
         setRecommendation(recommendationData);
       })
@@ -675,6 +709,7 @@ export default function KnowledgeGraphViewer({
         setProgressMap(mergedProgress);
         setCurrentNodeId(progressSnapshot.current_node_id || detail.node_id || "");
         setDynamicNodes(progressSnapshot.dynamic_nodes ?? []);
+        setActiveRemediation(progressSnapshot.active_remediation ?? null);
         persistRuntimeState(
           progressSnapshot.current_node_id || detail.node_id || "",
           progressSnapshot.dynamic_nodes ?? [],

@@ -38,6 +38,7 @@ export type GraphNodeProgressState =
   | "mastered"
   | "explored"
   | "in_progress"
+  | "needs_remediation"
   | "locked"
   | "available";
 
@@ -68,6 +69,11 @@ export function mapCourseKnowledgeGraphToFlow(
     currentNodeId?: string | null;
     progressMap?: Record<string, "explored" | "mastered">;
     issuesByNodeId?: Record<string, CourseKnowledgeGraphNodeIssue[]>;
+    remediationState?: {
+      sourceNodeId: string;
+      targetNodeId: string;
+      status: string;
+    } | null;
   },
 ) {
   const seenNodeIds = new Set<string>();
@@ -76,6 +82,7 @@ export function mapCourseKnowledgeGraphToFlow(
   const currentNodeId = options?.currentNodeId ?? null;
   const progressMap = options?.progressMap ?? {};
   const issuesByNodeId = options?.issuesByNodeId ?? {};
+  const remediationState = options?.remediationState ?? null;
   const prerequisites = new Map<string, Set<string>>();
 
   for (const edge of graph.edges) {
@@ -93,9 +100,12 @@ export function mapCourseKnowledgeGraphToFlow(
     const status = progressMap[id];
     const prereqIds = prerequisites.get(id) ?? new Set<string>();
     const hasUnmetPrerequisites = [...prereqIds].some((prereqId) => progressMap[prereqId] !== "mastered");
+    const isRemediationTarget = remediationState?.targetNodeId === id;
     const graphState: GraphNodeProgressState =
       status === "mastered"
         ? "mastered"
+        : isRemediationTarget
+          ? "needs_remediation"
         : currentNodeId === id
           ? "in_progress"
           : status === "explored"
@@ -111,6 +121,11 @@ export function mapCourseKnowledgeGraphToFlow(
             background: "#e5e7eb",
             color: "#64748b",
           }
+        : graphState === "needs_remediation"
+          ? {
+              border: "2px solid #e11d48",
+              boxShadow: "0 0 0 4px rgba(225, 29, 72, 0.12)",
+            }
         : graphState === "in_progress"
           ? {
               border: "2px solid #0ea5e9",

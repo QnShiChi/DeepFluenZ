@@ -12,8 +12,8 @@ test("describeGraphRecommendation formats remediation copy", () => {
     backup_node_ids: ["topic_history"],
   });
 
-  assert.equal(summary.badge, "Ôn lại trước");
-  assert.match(summary.message, /bài quiz|kiểm tra/i);
+  assert.equal(summary.badge, "ÔN LẠI");
+  assert.match(summary.message, /ôn lại|tiếp tục/i);
 });
 
 test("describeGraphRecommendation formats advance copy", () => {

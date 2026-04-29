@@ -123,6 +123,11 @@ export default function NodeDetailPanel({
                 <CircleDashed className="w-3 h-3" />
                 <span>Chưa mở khóa</span>
               </span>
+            ) : node.graphState === "needs_remediation" ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                <CircleDashed className="w-3 h-3" />
+                <span>Cần ôn lại</span>
+              </span>
             ) : progressStatus === "explored" ? (
               <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                 <CircleDashed className="w-3 h-3" />
@@ -168,6 +173,11 @@ export default function NodeDetailPanel({
         {node.hasUnmetPrerequisites ? (
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             Nút này còn thiếu kiến thức tiên quyết. Bạn vẫn có thể xem trước, nhưng nên hoàn thành các nút nền tảng trước để đi đúng lộ trình.
+          </div>
+        ) : null}
+        {node.graphState === "needs_remediation" ? (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            Nút này đang ở trạng thái remediation. Hãy ôn lại phần yếu và vượt qua bài kiểm tra lại để xóa trạng thái này.
           </div>
         ) : null}
         {qaIssues.length ? (
