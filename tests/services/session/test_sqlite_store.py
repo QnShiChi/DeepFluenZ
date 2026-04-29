@@ -229,6 +229,64 @@ def test_store_persists_graph_adaptive_gate_directly(store: SQLiteSessionStore) 
     assert stored["blocking_issue_ids"] == ["issue_cycle"]
 
 
+def test_upsert_and_read_student_state_preserves_active_remediation(store: SQLiteSessionStore) -> None:
+    payload = {
+        "course_id": "intro-ai",
+        "title": "Intro to AI",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    session = asyncio.run(store.create_session(title="Graph remediation"))
+
+    assert asyncio.run(store.upsert_course_template("intro-ai", json.dumps(payload))) is True
+    assert asyncio.run(
+        store.upsert_student_state(
+            session["id"],
+            "intro-ai",
+            {
+                "current_node_id": "topic_search",
+                "mastered_nodes": ["topic_intro"],
+                "explored_nodes": ["topic_search"],
+                "weak_node_ids": ["topic_search"],
+                "dynamic_nodes": [],
+                "active_remediation": {
+                    "source_node_id": "topic_search",
+                    "target_node_id": "topic_intro",
+                    "weak_concepts": ["state_space"],
+                    "failure_severity": "moderate",
+                    "status": "recommended",
+                    "attempt_count": 0,
+                    "last_node_quiz_score": 0.4,
+                    "last_remediation_quiz_score": None,
+                },
+                "remediation_cache": {
+                    "topic_intro::state_space": {
+                        "cache_key": "topic_intro::state_space",
+                        "target_node_id": "topic_intro",
+                        "weak_concepts": ["state_space"],
+                        "lesson_artifact": {"response": "lesson"},
+                        "mini_quiz_artifact": {"questions": []},
+                        "created_at": "2026-04-29T10:00:00Z",
+                    }
+                },
+            },
+        )
+    ) is True
+
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+    assert state is not None
+    assert state["active_remediation"]["target_node_id"] == "topic_intro"
+    assert "topic_intro::state_space" in state["remediation_cache"]
+
+
 def test_get_graph_qa_payloads_return_none_for_invalid_json_shapes(store: SQLiteSessionStore) -> None:
     payload = {
         "course_id": "intro-ai",
