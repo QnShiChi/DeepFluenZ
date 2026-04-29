@@ -20,6 +20,7 @@ import QuestionFollowupPanel, {
 } from "@/components/quiz/QuestionFollowupPanel";
 import { getUserAnswer, isQuizAnswerCorrect } from "@/lib/quiz-grading";
 import { buildQuizFollowupConfig, type QuizQuestion } from "@/lib/quiz-types";
+import { describeRemediationCtaSet, didPassGraphQuiz } from "@/lib/remediation-ui";
 import {
   addEntryToCategory,
   createCategory,
@@ -105,8 +106,13 @@ export default function QuizViewer({
     return {
       course_id: raw.course_id,
       node_id: raw.node_id,
+      quiz_kind: raw.quiz_kind,
+      target_node_id: raw.target_node_id,
+      weak_concepts: raw.weak_concepts,
+      node_difficulty: raw.node_difficulty,
     };
   }, [questions]);
+  const remediationCtas = useMemo(() => describeRemediationCtaSet(), []);
 
   useEffect(() => {
     threadsRef.current = threads;
@@ -409,6 +415,16 @@ export default function QuizViewer({
       }),
     [answers, questions],
   );
+  const graphQuizCorrectCount = useMemo(
+    () => submittedResults.filter((result) => result.is_correct).length,
+    [submittedResults],
+  );
+  const graphQuizPassed = useMemo(
+    () => didPassGraphQuiz(graphQuizCorrectCount, total),
+    [graphQuizCorrectCount, total],
+  );
+  const failedGraphQuiz =
+    graphContext?.quiz_kind === "node_quiz" && completedCount === total && !graphQuizPassed;
 
   useEffect(() => {
     if (!sessionId || total === 0 || completedCount !== total) return;
@@ -473,6 +489,28 @@ export default function QuizViewer({
     lastReportedSignatureRef.current = "";
     updateAnswer({ selected: null, typed: "", submitted: false });
   };
+
+  const handleRetryCurrentQuiz = useCallback(() => {
+    handleReset();
+  }, [handleReset]);
+
+  const handleStartRemediation = useCallback(() => {
+    if (!graphContext || typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("deeptutor:start-graph-remediation", {
+        detail: graphContext,
+      }),
+    );
+  }, [graphContext]);
+
+  const handleBackToGraph = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("deeptutor:return-to-graph", {
+        detail: graphContext,
+      }),
+    );
+  }, [graphContext]);
 
   const handleToggleFollowup = useCallback(() => {
     if (!q) return;
@@ -774,6 +812,35 @@ export default function QuizViewer({
             </>
           )}
         </div>
+
+        {failedGraphQuiz ? (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+            <div className="text-sm font-semibold">Bạn chưa vượt qua nút này</div>
+            <p className="mt-1 text-sm text-amber-900/90">
+              Hệ thống phát hiện phần còn yếu và có thể giúp bạn ôn lại trước khi làm tiếp.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={handleStartRemediation}
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-900 px-3 py-1.5 text-[12px] font-medium text-white"
+              >
+                {remediationCtas[0]}
+              </button>
+              <button
+                onClick={handleRetryCurrentQuiz}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[12px] font-medium text-amber-900"
+              >
+                {remediationCtas[1]}
+              </button>
+              <button
+                onClick={handleBackToGraph}
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-3 py-1.5 text-[12px] font-medium text-amber-900"
+              >
+                {remediationCtas[2]}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {ans.submitted && (
           <div className="mt-3 space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5">
