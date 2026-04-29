@@ -312,3 +312,29 @@ test("mapCourseKnowledgeGraphToFlow marks unmet prerequisite nodes as locked and
   assert.equal(lockedNode?.data.graphState, "locked");
   assert.match(String(lockedNode?.style?.opacity), /0\.6|0\.55/);
 });
+
+test("mapCourseKnowledgeGraphToFlow marks nodes with issue severity metadata", () => {
+  const flow = mapCourseKnowledgeGraphToFlow(
+    {
+      course_id: "intro-ai",
+      title: "Intro to AI",
+      source_type: "manual_json",
+      nodes: [{ node_id: "topic_intro", title: "Intro", node_type: "topic" }],
+      edges: [],
+      audit: {
+        backbone_node_ids: [],
+        enriched_node_ids: [],
+        backbone_edge_ids: [],
+        enriched_edge_ids: [],
+        warnings: [],
+      },
+    },
+    {
+      issuesByNodeId: {
+        topic_intro: [{ severity: "high", kind: "orphan_node" }],
+      },
+    },
+  );
+
+  assert.equal(flow.nodes[0]?.data?.issueSeverity, "high");
+});

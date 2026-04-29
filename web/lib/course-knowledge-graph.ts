@@ -29,6 +29,11 @@ export interface CourseKnowledgeGraph {
   };
 }
 
+export interface CourseKnowledgeGraphNodeIssue {
+  severity: "critical" | "high" | "medium" | "low";
+  kind: string;
+}
+
 export type GraphNodeProgressState =
   | "mastered"
   | "explored"
@@ -62,6 +67,7 @@ export function mapCourseKnowledgeGraphToFlow(
     recommendedNodeId?: string | null;
     currentNodeId?: string | null;
     progressMap?: Record<string, "explored" | "mastered">;
+    issuesByNodeId?: Record<string, CourseKnowledgeGraphNodeIssue[]>;
   },
 ) {
   const seenNodeIds = new Set<string>();
@@ -69,6 +75,7 @@ export function mapCourseKnowledgeGraphToFlow(
   const recommendedNodeId = options?.recommendedNodeId ?? null;
   const currentNodeId = options?.currentNodeId ?? null;
   const progressMap = options?.progressMap ?? {};
+  const issuesByNodeId = options?.issuesByNodeId ?? {};
   const prerequisites = new Map<string, Set<string>>();
 
   for (const edge of graph.edges) {
@@ -80,6 +87,8 @@ export function mapCourseKnowledgeGraphToFlow(
 
   const nodes = graph.nodes.map((node, index) => {
     const id = ensureUniqueId(node.node_id, seenNodeIds, "node", index);
+    const nodeIssues = issuesByNodeId[id] ?? [];
+    const issueSeverity = nodeIssues[0]?.severity;
     const isRecommended = id === recommendedNodeId;
     const status = progressMap[id];
     const prereqIds = prerequisites.get(id) ?? new Set<string>();
@@ -120,6 +129,8 @@ export function mapCourseKnowledgeGraphToFlow(
         description: node.description ?? "",
         nodeType: node.node_type,
         difficulty: node.difficulty ?? "medium",
+        issueSeverity,
+        issueCount: nodeIssues.length,
         isRecommended,
         graphState,
         hasUnmetPrerequisites,
