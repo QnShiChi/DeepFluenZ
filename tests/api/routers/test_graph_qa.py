@@ -102,6 +102,22 @@ def test_apply_graph_qa_fix_updates_report(store: SQLiteSessionStore) -> None:
     assert gate["blocking_issue_ids"] == body["gate_status"]["blocking_issue_ids"]
 
 
+def test_graph_qa_apply_fix_clears_high_issue(store: SQLiteSessionStore) -> None:
+    _seed_course(store)
+
+    with TestClient(_build_app(store)) as client:
+        analyze = client.post("/api/v1/graph/qa/analyze/intro-ai")
+        assert analyze.status_code == 200
+
+        response = client.post(
+            "/api/v1/graph/qa/fixes/intro-ai/apply",
+            json={"fix_id": "fix_edge_intro_search"},
+        )
+        assert response.status_code == 200
+        assert response.json()["health_summary"]["high_count"] == 0
+        assert response.json()["gate_status"]["status"] == "adaptive_ready"
+
+
 def test_graph_qa_draft_commit_reanalyzes(store: SQLiteSessionStore) -> None:
     _seed_course(store)
 
@@ -137,6 +153,23 @@ def test_get_graph_qa_report_returns_404_for_missing_report(store: SQLiteSession
         response = client.get("/api/v1/graph/qa/intro-ai")
         assert response.status_code == 404
         assert response.json()["detail"] == "Graph QA report not found"
+
+
+def test_get_graph_qa_draft_returns_staged_changes(store: SQLiteSessionStore) -> None:
+    _seed_course(store)
+
+    with TestClient(_build_app(store)) as client:
+        analyze = client.post("/api/v1/graph/qa/analyze/intro-ai")
+        assert analyze.status_code == 200
+        stage = client.post(
+            "/api/v1/graph/qa/fixes/intro-ai/draft",
+            json={"fix_ids": ["fix_edge_intro_search"]},
+        )
+        assert stage.status_code == 200
+
+        response = client.get("/api/v1/graph/qa/draft/intro-ai")
+        assert response.status_code == 200
+        assert response.json()["changes"][0]["fix_id"] == "fix_edge_intro_search"
 
 
 def test_apply_graph_qa_fix_returns_404_for_missing_fix(store: SQLiteSessionStore) -> None:

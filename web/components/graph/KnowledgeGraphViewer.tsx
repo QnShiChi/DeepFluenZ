@@ -36,9 +36,17 @@ import {
   writeStoredKnowledgeGraphState,
 } from "@/lib/knowledge-graph-state";
 import {
+  analyzeGraphQa,
+  applyGraphQaFix,
+  collectSafeBulkFixIds,
+  commitGraphQaDraft,
+  getGraphQaDraft,
   getGraphQaReport,
+  stageGraphQaFixes,
+  type GraphQaDraft,
   type GraphQaIssue,
   type GraphQaReport,
+  type GraphQaSuggestedFix,
 } from "@/lib/graph-qa-api";
 import { resolveGraphQaIssueNode } from "@/lib/graph-qa-ui";
 
@@ -118,7 +126,16 @@ export default function KnowledgeGraphViewer({
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const [qaReport, setQaReport] = useState<GraphQaReport | null>(null);
+  const [qaDraft, setQaDraft] = useState<GraphQaDraft | null>(null);
+  const [isMutatingQa, setIsMutatingQa] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resolveNodeSuggestedFixes = useCallback((nodeId: string): GraphQaSuggestedFix[] => (
+    (qaReport?.suggested_fixes ?? []).filter((fix) => {
+      const issue = qaReport?.issues.find((item) => item.issue_id === fix.issue_id);
+      return Boolean(issue?.affected_node_ids.includes(nodeId));
+    })
+  ), [qaReport]);
 
   const buildIssuesByNodeId = useCallback((report: GraphQaReport | null): IssuesByNodeId => {
     const issuesByNodeId: IssuesByNodeId = {};
@@ -144,8 +161,9 @@ export default function KnowledgeGraphViewer({
       graphState: (node.data as Record<string, unknown>).graphState as string | undefined,
       hasUnmetPrerequisites: Boolean((node.data as Record<string, unknown>).hasUnmetPrerequisites),
       qaIssues: qaReport?.issues.filter((issue) => issue.affected_node_ids.includes(node.id)) ?? [],
+      qaSuggestedFixes: resolveNodeSuggestedFixes(node.id),
     });
-  }, [courseId, qaReport]);
+  }, [courseId, qaReport, resolveNodeSuggestedFixes]);
 
   const persistRuntimeState = useCallback((nextCurrentNodeId: string, nextDynamicNodes: DynamicKnowledgeGraphNode[]) => {
     if (!courseId) return;
@@ -254,24 +272,93 @@ export default function KnowledgeGraphViewer({
     setQaReport(report);
   }, []);
 
+  const refreshGraphQaDraft = useCallback(async (targetCourseId: string) => {
+    const draft = await getGraphQaDraft(targetCourseId).catch(() => null);
+    setQaDraft(draft);
+  }, []);
+
+  const refreshCourseTemplate = useCallback(async (targetCourseId: string) => {
+    const response = await fetch(apiUrl(`/api/v1/course-templates/${targetCourseId}`));
+    if (!response.ok) {
+      throw new Error("Failed to load course template");
+    }
+    setGraphTemplate(await response.json());
+  }, []);
+
   const handleAnalyzeGraph = useCallback(() => {
     if (!courseId) return;
-    void fetch(apiUrl(`/api/v1/graph/qa/analyze/${encodeURIComponent(courseId)}`), {
-      method: "POST",
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to analyze graph: ${response.status}`);
-        }
-        return response.json() as Promise<GraphQaReport>;
-      })
+    setIsMutatingQa(true);
+    void analyzeGraphQa(courseId)
       .then((report) => {
         setQaReport(report);
+        void refreshGraphQaDraft(courseId);
       })
       .catch(() => {
         void refreshGraphQa(courseId);
+      })
+      .finally(() => {
+        setIsMutatingQa(false);
       });
-  }, [courseId, refreshGraphQa]);
+  }, [courseId, refreshGraphQa, refreshGraphQaDraft]);
+
+  const handleApplyFix = useCallback((fixId: string) => {
+    if (!courseId) return;
+    setIsMutatingQa(true);
+    void applyGraphQaFix(courseId, fixId)
+      .then(async (report) => {
+        setQaReport(report);
+        await refreshCourseTemplate(courseId);
+        await refreshGraphQaDraft(courseId);
+        if (sessionId) {
+          await refreshRecommendation(courseId);
+        }
+      })
+      .catch(() => {
+        void refreshGraphQa(courseId);
+        void refreshGraphQaDraft(courseId);
+      })
+      .finally(() => {
+        setIsMutatingQa(false);
+      });
+  }, [courseId, refreshCourseTemplate, refreshGraphQa, refreshGraphQaDraft, refreshRecommendation, sessionId]);
+
+  const handleStageSafeFixes = useCallback(() => {
+    if (!courseId || !qaReport) return;
+    const safeFixIds = collectSafeBulkFixIds(qaReport.suggested_fixes);
+    if (!safeFixIds.length) return;
+    setIsMutatingQa(true);
+    void stageGraphQaFixes(courseId, safeFixIds)
+      .then((draft) => {
+        setQaDraft(draft);
+      })
+      .catch(() => {
+        void refreshGraphQaDraft(courseId);
+      })
+      .finally(() => {
+        setIsMutatingQa(false);
+      });
+  }, [courseId, qaReport, refreshGraphQaDraft]);
+
+  const handleCommitDraft = useCallback(() => {
+    if (!courseId) return;
+    setIsMutatingQa(true);
+    void commitGraphQaDraft(courseId)
+      .then(async (report) => {
+        setQaReport(report);
+        setQaDraft({ course_id: courseId, changes: [] });
+        await refreshCourseTemplate(courseId);
+        if (sessionId) {
+          await refreshRecommendation(courseId);
+        }
+      })
+      .catch(() => {
+        void refreshGraphQa(courseId);
+        void refreshGraphQaDraft(courseId);
+      })
+      .finally(() => {
+        setIsMutatingQa(false);
+      });
+  }, [courseId, refreshCourseTemplate, refreshGraphQa, refreshGraphQaDraft, refreshRecommendation, sessionId]);
 
   const handleFocusIssue = useCallback((issue: GraphQaIssue) => {
     const targetNode = resolveGraphQaIssueNode(nodes, issue);
@@ -459,28 +546,34 @@ export default function KnowledgeGraphViewer({
   useEffect(() => {
     if (!courseId) {
       setQaReport(null);
+      setQaDraft(null);
       return;
     }
 
     void refreshGraphQa(courseId);
-  }, [courseId, refreshGraphQa]);
+    void refreshGraphQaDraft(courseId);
+  }, [courseId, refreshGraphQa, refreshGraphQaDraft]);
 
   useEffect(() => {
     if (!selectedNode?.id) return;
     setSelectedNode((prev) => {
       if (!prev) return prev;
       const qaIssues = qaReport?.issues.filter((issue) => issue.affected_node_ids.includes(prev.id)) ?? [];
+      const qaSuggestedFixes = resolveNodeSuggestedFixes(prev.id);
       const prevIssueIds = (prev.qaIssues ?? []).map((issue) => issue.issue_id).join("|");
       const nextIssueIds = qaIssues.map((issue) => issue.issue_id).join("|");
-      if (prevIssueIds === nextIssueIds) {
+      const prevFixIds = (prev.qaSuggestedFixes ?? []).map((fix) => fix.fix_id).join("|");
+      const nextFixIds = qaSuggestedFixes.map((fix) => fix.fix_id).join("|");
+      if (prevIssueIds === nextIssueIds && prevFixIds === nextFixIds) {
         return prev;
       }
       return {
         ...prev,
         qaIssues,
+        qaSuggestedFixes,
       };
     });
-  }, [qaReport, selectedNode?.id]);
+  }, [qaReport, resolveNodeSuggestedFixes, selectedNode?.id]);
 
   useEffect(() => {
     if (!graphTemplate?.nodes) return;
@@ -626,8 +719,13 @@ export default function KnowledgeGraphViewer({
       </div>
       <GraphHealthPanel
         report={qaReport}
+        draft={qaDraft}
+        busy={isMutatingQa}
         onAnalyze={handleAnalyzeGraph}
         onFocusIssue={handleFocusIssue}
+        onApplyFix={handleApplyFix}
+        onStageSafeFixes={handleStageSafeFixes}
+        onCommitDraft={handleCommitDraft}
       />
       <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>
         <Background />
@@ -642,6 +740,9 @@ export default function KnowledgeGraphViewer({
           message: describeGraphRecommendation(recommendation).message,
         } : undefined}
         qaIssues={selectedNode?.qaIssues ?? []}
+        onApplyQaFix={(fixId) => {
+          handleApplyFix(fixId);
+        }}
         onClose={() => setSelectedNode(null)}
         onJumpToRecommended={handleJumpToRecommended}
         onAskAbout={(n) => {

@@ -108,6 +108,12 @@ async def get_graph_qa_report(course_id: str):
     return report.model_dump()
 
 
+@router.get("/qa/draft/{course_id}")
+async def get_graph_qa_draft(course_id: str):
+    draft = _load_graph_qa_draft(await get_sqlite_session_store().get_graph_qa_draft(course_id))
+    return draft.model_dump()
+
+
 @router.post("/qa/fixes/{course_id}/apply")
 async def apply_graph_qa_fix(course_id: str, payload: FixApplyPayload):
     store = get_sqlite_session_store()

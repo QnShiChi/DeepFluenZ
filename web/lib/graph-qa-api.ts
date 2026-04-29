@@ -73,6 +73,13 @@ export async function getGraphQaReport(courseId: string): Promise<GraphQaReport 
   return expectJson<GraphQaReport>(response);
 }
 
+export async function analyzeGraphQa(courseId: string): Promise<GraphQaReport> {
+  const response = await fetch(apiUrl(`/api/v1/graph/qa/analyze/${encodeURIComponent(courseId)}`), {
+    method: "POST",
+  });
+  return expectJson<GraphQaReport>(response);
+}
+
 export async function applyGraphQaFix(courseId: string, fixId: string): Promise<GraphQaReport> {
   const response = await fetch(apiUrl(`/api/v1/graph/qa/fixes/${encodeURIComponent(courseId)}/apply`), {
     method: "POST",
@@ -107,4 +114,12 @@ export async function commitGraphQaDraft(courseId: string): Promise<GraphQaRepor
 export async function getGraphQaGate(courseId: string): Promise<GraphQaGate | null> {
   const report = await getGraphQaReport(courseId);
   return report?.gate_status ?? null;
+}
+
+export function collectSafeBulkFixIds(
+  fixes: Array<Pick<GraphQaSuggestedFix, "fix_id" | "safe_for_bulk_apply">>,
+): string[] {
+  return fixes
+    .filter((fix) => fix.safe_for_bulk_apply)
+    .map((fix) => fix.fix_id);
 }

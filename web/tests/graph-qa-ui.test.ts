@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+process.env.NEXT_PUBLIC_API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8001";
+
 import {
   describeAdaptiveGateStatus,
   describeGraphHealthStatus,
@@ -69,4 +71,14 @@ test("resolveGraphQaIssueNode returns the affected node without mutating state",
     { id: "topic_intro", title: "Intro" },
     { id: "topic_search", title: "Search" },
   ]);
+});
+
+test("collectSafeBulkFixIds only returns safe fixes", async () => {
+  const { collectSafeBulkFixIds } = await import("../lib/graph-qa-api.ts");
+  const result = collectSafeBulkFixIds([
+    { fix_id: "fix_1", safe_for_bulk_apply: true },
+    { fix_id: "fix_2", safe_for_bulk_apply: false },
+  ]);
+
+  assert.deepEqual(result, ["fix_1"]);
 });

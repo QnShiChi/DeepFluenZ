@@ -6,7 +6,7 @@ import {
   KNOWLEDGE_GRAPH_COPY,
 } from "@/lib/knowledge-graph-copy";
 import type { NodeStatus } from "@/lib/node-progress-api";
-import type { GraphQaIssue } from "@/lib/graph-qa-api";
+import type { GraphQaIssue, GraphQaSuggestedFix } from "@/lib/graph-qa-api";
 import { getGraphQaSeverityLabel } from "@/lib/graph-qa-ui";
 
 export interface SelectedNodeData {
@@ -19,6 +19,7 @@ export interface SelectedNodeData {
   graphState?: string;
   hasUnmetPrerequisites?: boolean;
   qaIssues?: GraphQaIssue[];
+  qaSuggestedFixes?: GraphQaSuggestedFix[];
 }
 
 interface NodeDetailPanelProps {
@@ -30,6 +31,7 @@ interface NodeDetailPanelProps {
     message: string;
   };
   qaIssues?: GraphQaIssue[];
+  onApplyQaFix?: (fixId: string) => void;
   onClose: () => void;
   onAskAbout: (node: SelectedNodeData) => void;
   onQuizNode: (node: SelectedNodeData) => void;
@@ -61,6 +63,7 @@ export default function NodeDetailPanel({
   progressStatus,
   recommendation,
   qaIssues = [],
+  onApplyQaFix,
   onClose,
   onAskAbout,
   onQuizNode,
@@ -183,6 +186,25 @@ export default function NodeDetailPanel({
                 {issue.why_it_matters ? (
                   <p className="mt-1 leading-relaxed opacity-90">{issue.why_it_matters}</p>
                 ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {node.qaSuggestedFixes?.length ? (
+          <div className="mb-4 space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Quick Fixes
+            </div>
+            {node.qaSuggestedFixes.map((fix) => (
+              <div key={fix.fix_id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                <div className="font-semibold">{fix.change_type}</div>
+                <p className="mt-1 break-all text-[11px] text-slate-500">{fix.fix_id}</p>
+                <button
+                  onClick={() => onApplyQaFix?.(fix.fix_id)}
+                  className="mt-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  Áp dụng gợi ý này
+                </button>
               </div>
             ))}
           </div>
