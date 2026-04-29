@@ -3,10 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from deeptutor.services.session.sqlite_store import get_sqlite_session_store
 from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
 graph_recommendation_module = importlib.import_module("deeptutor.api.routers.graph_recommendation")
@@ -15,12 +12,6 @@ graph_recommendation_module = importlib.import_module("deeptutor.api.routers.gra
 @pytest.fixture
 def store(tmp_path: Path) -> SQLiteSessionStore:
     return SQLiteSessionStore(db_path=tmp_path / "graph-recommendation.db")
-
-
-def _build_app() -> FastAPI:
-    app = FastAPI()
-    app.include_router(graph_recommendation_module.router, prefix="/api/v1")
-    return app
 
 
 @pytest.mark.anyio
@@ -114,17 +105,14 @@ async def test_graph_recommendation_returns_blocked_state_when_gate_is_blocked(
         },
     )
 
-    app = _build_app()
-    app.dependency_overrides[get_sqlite_session_store] = lambda: store
-    with TestClient(app) as client:
-        response = client.get(
-            f"/api/v1/graph/recommendation/intro-ai?session_id={session['session_id']}",
-        )
-        assert response.status_code == 200
-        payload = response.json()
+    response = await graph_recommendation_module.get_graph_recommendation(
+        course_id="intro-ai",
+        session_id=session["session_id"],
+        store=store,
+    )
 
-    assert payload["recommended_node_id"] == ""
-    assert payload["mode"] == "review"
-    assert payload["score"] == 0.0
-    assert payload["reason_codes"] == ["needs_review_before_advance"]
-    assert payload["backup_node_ids"] == []
+    assert response.recommended_node_id == ""
+    assert response.mode == "review"
+    assert response.score == 0.0
+    assert response.reason_codes == ["needs_review_before_advance"]
+    assert response.backup_node_ids == []
