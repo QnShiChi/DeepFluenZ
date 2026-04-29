@@ -30,5 +30,15 @@ async def get_graph_recommendation(
             "dynamic_nodes": [],
         }
 
+    gate = await store.get_graph_adaptive_gate(course_id)
+    if gate and gate.get("status") == "adaptive_blocked":
+        return GraphRecommendation(
+            recommended_node_id="",
+            mode="review",
+            score=0.0,
+            reason_codes=["needs_review_before_advance"],
+            backup_node_ids=[],
+        )
+
     graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
     return recommend_next_graph_node(graph=graph, student_state=state)
