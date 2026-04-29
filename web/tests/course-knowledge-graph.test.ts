@@ -337,4 +337,5 @@ test("mapCourseKnowledgeGraphToFlow marks nodes with issue severity metadata", (
   );
 
   assert.equal(flow.nodes[0]?.data?.issueSeverity, "high");
+  assert.equal(flow.nodes[0]?.data?.issueCount, 1);
 });
