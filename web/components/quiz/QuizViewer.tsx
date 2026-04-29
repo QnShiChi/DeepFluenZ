@@ -116,6 +116,21 @@ export default function QuizViewer({
     };
   }, [questions]);
   const remediationCtas = useMemo(() => describeRemediationCtaSet(), []);
+  const quizInstanceKey = useMemo(
+    () => questions.map((question, index) => getQuestionKey(question, index)).join("|"),
+    [questions],
+  );
+
+  useEffect(() => {
+    setIdx(0);
+    setAnswers({});
+    setThreads({});
+    setEntryIds({});
+    setBookmarked({});
+    setCategoryDropdownKey(null);
+    setNewCategoryName("");
+    lastReportedSignatureRef.current = "";
+  }, [quizInstanceKey]);
 
   useEffect(() => {
     threadsRef.current = threads;
@@ -404,7 +419,8 @@ export default function QuizViewer({
         if (!answer?.submitted) return [];
         return [
           {
-            question_id: question.question_id,
+            question_id: question.source_question_id ?? question.question_id,
+            notebook_question_id: question.question_id,
             question: question.question,
             question_type: question.question_type,
             options: question.options ?? {},

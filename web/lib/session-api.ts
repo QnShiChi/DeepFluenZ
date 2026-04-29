@@ -74,6 +74,7 @@ export interface SessionDetail {
 
 export interface QuizResultItem {
   question_id?: string;
+  notebook_question_id?: string;
   question: string;
   question_type?: string;
   options?: Record<string, string>;

@@ -35,6 +35,7 @@ class SessionRenameRequest(BaseModel):
 
 class QuizResultItem(BaseModel):
     question_id: str = ""
+    notebook_question_id: str = ""
     question: str = Field(..., min_length=1)
     question_type: str = ""
     options: dict[str, str] | None = None
@@ -133,9 +134,16 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
     )
     notebook_count = 0
     try:
+        notebook_items = []
+        for item in payload.answers:
+            notebook_item = item.model_dump()
+            notebook_question_id = (item.notebook_question_id or "").strip()
+            if notebook_question_id:
+                notebook_item["question_id"] = notebook_question_id
+            notebook_items.append(notebook_item)
         notebook_count = await store.upsert_notebook_entries(
             session_id,
-            [item.model_dump() for item in payload.answers],
+            notebook_items,
         )
     except Exception:
         logger.warning("Failed to upsert notebook entries for session %s", session_id, exc_info=True)

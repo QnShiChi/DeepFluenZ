@@ -28,6 +28,7 @@ export const DEFAULT_QUIZ_CONFIG: DeepQuestionFormConfig = {
 
 export interface QuizQuestion {
   question_id: string;
+  source_question_id?: string;
   question: string;
   question_type: "choice" | "written" | "coding";
   options?: Record<string, string>;
@@ -44,6 +45,40 @@ export interface QuizQuestion {
     weak_concepts?: string[];
     node_difficulty?: string;
   };
+}
+
+function hashQuizText(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function buildScopedQuizQuestionId(
+  rawQuestionId: string,
+  question: string,
+  index: number,
+  graphContext?: {
+    course_id: string;
+    node_id: string;
+    quiz_kind?: "node_quiz" | "remediation_quiz";
+    target_node_id?: string;
+  },
+): string {
+  const baseId = rawQuestionId || `question_${index + 1}`;
+  if (!graphContext) return baseId;
+  const targetPart = graphContext.target_node_id || "";
+  const quizKind = graphContext.quiz_kind || "node_quiz";
+  const fingerprint = hashQuizText(`${baseId}:${question}`);
+  return [
+    quizKind,
+    graphContext.course_id,
+    graphContext.node_id,
+    targetPart,
+    baseId,
+    fingerprint,
+  ].join("::");
 }
 
 export interface QuizFollowupContext {
@@ -74,7 +109,7 @@ export function extractQuizQuestions(
   const results = summary.results as Array<Record<string, unknown>> | undefined;
   if (!Array.isArray(results) || results.length === 0) return null;
 
-  const parsed: Array<QuizQuestion | null> = results.map((item) => {
+  const parsed: Array<QuizQuestion | null> = results.map((item, index) => {
     const qa = (item.qa_pair ?? item) as Record<string, unknown>;
     if (!qa.question) return null;
     const graphContextRaw = resultMetadata.graph_context as Record<string, unknown> | undefined;
@@ -104,8 +139,16 @@ export function extractQuizQuestions(
                 : undefined,
           }
         : undefined;
+    const rawQuestionId = String(qa.question_id ?? "");
+    const scopedQuestionId = buildScopedQuizQuestionId(
+      rawQuestionId,
+      String(qa.question ?? ""),
+      index,
+      graphContext,
+    );
     const question: QuizQuestion = {
-      question_id: String(qa.question_id ?? ""),
+      question_id: scopedQuestionId,
+      source_question_id: rawQuestionId || undefined,
       question: String(qa.question ?? ""),
       question_type: (qa.question_type as QuizQuestion["question_type"]) ?? "written",
       options: qa.options as Record<string, string> | undefined,

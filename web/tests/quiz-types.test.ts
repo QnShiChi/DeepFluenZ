@@ -58,3 +58,50 @@ test("extractQuizQuestions preserves remediation quiz metadata", () => {
   assert.deepEqual(questions?.[0]?.graph_context?.weak_concepts, ["state_space"]);
   assert.equal(questions?.[0]?.graph_context?.node_difficulty, "easy");
 });
+
+test("extractQuizQuestions scopes graph-linked question ids per node quiz instance", () => {
+  const first = extractQuizQuestions({
+    graph_context: {
+      course_id: "intro-ai",
+      node_id: "topic_search",
+      quiz_kind: "node_quiz",
+    },
+    summary: {
+      results: [
+        {
+          qa_pair: {
+            question_id: "q_1",
+            question: "What is search?",
+            question_type: "choice",
+            correct_answer: "A",
+            explanation: "Definition",
+          },
+        },
+      ],
+    },
+  });
+  const second = extractQuizQuestions({
+    graph_context: {
+      course_id: "intro-ai",
+      node_id: "topic_oop",
+      quiz_kind: "node_quiz",
+    },
+    summary: {
+      results: [
+        {
+          qa_pair: {
+            question_id: "q_1",
+            question: "What is OOP?",
+            question_type: "choice",
+            correct_answer: "A",
+            explanation: "Definition",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.notEqual(first?.[0]?.question_id, second?.[0]?.question_id);
+  assert.equal(first?.[0]?.source_question_id, "q_1");
+  assert.equal(second?.[0]?.source_question_id, "q_1");
+});
