@@ -4,11 +4,22 @@ Unified session history API.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from pydantic import BaseModel, Field, field_validator
 from fastapi import APIRouter, HTTPException, Query
 
+from deeptutor.services.graph.models import CourseKnowledgeGraph
+from deeptutor.services.graph.quiz_policy import (
+    determine_failure_severity,
+    determine_graph_quiz_pass_threshold,
+)
+from deeptutor.services.graph.remediation import (
+    clear_completed_remediation,
+    create_or_update_remediation_state,
+    resolve_remediation_target,
+)
 from deeptutor.services.session import get_sqlite_session_store
 
 logger = logging.getLogger(__name__)
@@ -44,7 +55,7 @@ class QuizResultItem(BaseModel):
 
 class QuizResultsRequest(BaseModel):
     answers: list[QuizResultItem] = Field(default_factory=list)
-    graph_context: dict[str, str] | None = None
+    graph_context: dict[str, object] | None = None
 
 
 def _format_quiz_results_message(answers: list[QuizResultItem]) -> str:
@@ -133,13 +144,81 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
     if course_id and node_id:
         try:
             correct = sum(1 for item in payload.answers if item.is_correct)
-            score_ratio = (correct / len(payload.answers)) if payload.answers else 0.0
+            question_count = len(payload.answers)
+            score_ratio = (correct / question_count) if question_count else 0.0
+            quiz_kind = str(graph_context.get("quiz_kind", "node_quiz") or "node_quiz").strip() or "node_quiz"
+            pass_threshold = determine_graph_quiz_pass_threshold(question_count)
+            mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
             graph_updated = await store.record_graph_quiz_outcome(
                 session_id,
                 course_id,
                 node_id,
                 score_ratio,
+                mastery_threshold=mastery_threshold,
             )
+            if quiz_kind == "node_quiz":
+                template = await store.get_course_template(course_id)
+                graph = None
+                if template and isinstance(template.get("template_json"), str):
+                    graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
+
+                state = await store.get_student_state(session_id, course_id) or {
+                    "current_node_id": "",
+                    "mastered_nodes": [],
+                    "explored_nodes": [],
+                    "weak_node_ids": [],
+                    "dynamic_nodes": [],
+                    "active_remediation": None,
+                    "remediation_cache": {},
+                }
+                passed = correct >= pass_threshold
+                question_concept_map = graph_context.get("question_concept_map")
+                concept_map = question_concept_map if isinstance(question_concept_map, dict) else {}
+                weak_concepts = sorted(
+                    {
+                        concept
+                        for item in payload.answers
+                        if not item.is_correct
+                        for concept in (
+                            concept_map.get(item.question_id, [])
+                            if isinstance(concept_map.get(item.question_id, []), list)
+                            else []
+                        )
+                        if isinstance(concept, str) and concept.strip()
+                    }
+                )
+
+                if passed:
+                    state = clear_completed_remediation(state, passed_node_id=node_id)
+                else:
+                    prerequisite_weakness = bool(graph_context.get("prerequisite_weakness"))
+                    severity = determine_failure_severity(
+                        score_ratio=score_ratio,
+                        weak_concepts=weak_concepts,
+                        prerequisite_weakness=prerequisite_weakness,
+                    )
+                    if graph is not None:
+                        target = resolve_remediation_target(
+                            graph=graph,
+                            source_node_id=node_id,
+                            weak_concepts=weak_concepts,
+                            mastered_nodes=state.get("mastered_nodes", []) or [],
+                            prerequisite_weakness=prerequisite_weakness,
+                        )
+                    else:
+                        target = {
+                            "target_node_id": node_id,
+                            "weak_concepts": weak_concepts,
+                        }
+                    state = create_or_update_remediation_state(
+                        state,
+                        source_node_id=node_id,
+                        target_node_id=str(target["target_node_id"]),
+                        weak_concepts=list(target["weak_concepts"]),
+                        failure_severity=severity,
+                        score_ratio=score_ratio,
+                    )
+                await store.upsert_student_state(session_id, course_id, state)
         except Exception:
             logger.warning(
                 "Failed to update graph quiz outcome for session %s course %s node %s",
