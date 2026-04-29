@@ -72,6 +72,14 @@ GraphQaFixChangeType = Literal[
     "remove_prerequisite_edge",
 ]
 GraphAdaptiveGateStatus = Literal["adaptive_ready", "adaptive_limited", "adaptive_blocked"]
+GraphQuizFailureSeverity = Literal["mild", "moderate", "severe"]
+GraphRemediationStatus = Literal[
+    "recommended",
+    "lesson_ready",
+    "mini_quiz_ready",
+    "passed_mini_quiz",
+    "completed",
+]
 
 
 class SourceRef(BaseModel):
@@ -212,3 +220,27 @@ class GraphQaReport(BaseModel):
     issues: list[GraphQaIssue] = Field(default_factory=list)
     suggested_fixes: list[GraphQaSuggestedFix] = Field(default_factory=list)
     gate_status: GraphQaGateStatus
+
+
+class ActiveGraphRemediation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_node_id: str
+    target_node_id: str
+    weak_concepts: list[str] = Field(default_factory=list)
+    failure_severity: GraphQuizFailureSeverity
+    status: GraphRemediationStatus
+    attempt_count: int = 0
+    last_node_quiz_score: float | None = None
+    last_remediation_quiz_score: float | None = None
+
+
+class GraphRemediationCacheEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cache_key: str
+    target_node_id: str
+    weak_concepts: list[str] = Field(default_factory=list)
+    lesson_artifact: dict[str, object] = Field(default_factory=dict)
+    mini_quiz_artifact: dict[str, object] = Field(default_factory=dict)
+    created_at: str = ""
