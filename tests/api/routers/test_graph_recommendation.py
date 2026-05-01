@@ -68,6 +68,10 @@ async def test_get_graph_recommendation_returns_next_node(store: SQLiteSessionSt
 
     assert response.recommended_node_id == "topic_search"
     assert response.mode == "advance"
+    events = await store.get_learning_timeline("intro-ai", category="recommendation", limit=10)
+    assert len(events) == 1
+    assert events[0]["event_type"] == "recommendation_changed"
+    assert events[0]["details"]["recommended_node_id"] == "topic_search"
 
 
 @pytest.mark.anyio
@@ -116,3 +120,68 @@ async def test_graph_recommendation_returns_blocked_state_when_gate_is_blocked(
     assert response.score == 0.0
     assert response.reason_codes == ["needs_review_before_advance"]
     assert response.backup_node_ids == []
+
+
+@pytest.mark.anyio
+async def test_graph_recommendation_only_logs_meaningful_changes(
+    store: SQLiteSessionStore,
+) -> None:
+    session = await store.create_session(title="Graph recommendation session")
+    await store.upsert_course_template(
+        "intro-ai",
+        json.dumps(
+            {
+                "course_id": "intro-ai",
+                "title": "Intro to AI",
+                "source_type": "manual_json",
+                "nodes": [
+                    {"node_id": "topic_intro", "title": "Intro", "node_type": "topic"},
+                    {"node_id": "topic_search", "title": "Search", "node_type": "topic"},
+                ],
+                "edges": [
+                    {
+                        "edge_id": "edge_intro_search",
+                        "source": "topic_intro",
+                        "target": "topic_search",
+                        "relation_type": "prerequisite",
+                        "confidence": 1.0,
+                        "rationale": "",
+                        "source_refs": [],
+                    }
+                ],
+                "audit": {
+                    "backbone_node_ids": ["topic_intro", "topic_search"],
+                    "enriched_node_ids": [],
+                    "backbone_edge_ids": ["edge_intro_search"],
+                    "enriched_edge_ids": [],
+                    "warnings": [],
+                },
+            }
+        ),
+    )
+    await store.upsert_student_state(
+        session["session_id"],
+        "intro-ai",
+        {
+            "current_node_id": "topic_intro",
+            "mastered_nodes": ["topic_intro"],
+            "explored_nodes": [],
+            "dynamic_nodes": [],
+        },
+    )
+
+    first = await graph_recommendation_module.get_graph_recommendation(
+        course_id="intro-ai",
+        session_id=session["session_id"],
+        store=store,
+    )
+    second = await graph_recommendation_module.get_graph_recommendation(
+        course_id="intro-ai",
+        session_id=session["session_id"],
+        store=store,
+    )
+
+    assert first.recommended_node_id == "topic_search"
+    assert second.recommended_node_id == "topic_search"
+    events = await store.get_learning_timeline("intro-ai", category="recommendation", limit=10)
+    assert len(events) == 1

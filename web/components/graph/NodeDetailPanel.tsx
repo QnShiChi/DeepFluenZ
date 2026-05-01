@@ -36,6 +36,7 @@ interface NodeDetailPanelProps {
   onAskAbout: (node: SelectedNodeData) => void;
   onQuizNode: (node: SelectedNodeData) => void;
   onJumpToRecommended?: (nodeId: string) => void;
+  onOpenTimeline?: (nodeId: string) => void;
 }
 
 const DIFFICULTY_STYLES: Record<string, string> = {
@@ -68,6 +69,7 @@ export default function NodeDetailPanel({
   onAskAbout,
   onQuizNode,
   onJumpToRecommended,
+  onOpenTimeline,
 }: NodeDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -245,6 +247,12 @@ export default function NodeDetailPanel({
         >
           <ClipboardCheck className="w-4 h-4" />
           {KNOWLEDGE_GRAPH_COPY.testKnowledge}
+        </button>
+        <button
+          onClick={() => onOpenTimeline?.(node.id)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-200 active:scale-[0.98] transition-all shadow-sm"
+        >
+          Xem learning timeline
         </button>
       </div>
 

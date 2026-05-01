@@ -220,6 +220,7 @@ from deeptutor.api.routers import (
     node_progress,
     graph_recommendation,
     graph_qa,
+    graph_timeline,
 )
 
 # Include routers
@@ -245,6 +246,7 @@ app.include_router(course_templates.router, prefix="/api/v1", tags=["course-temp
 app.include_router(node_progress.router, prefix="/api/v1", tags=["node-progress"])
 app.include_router(graph_recommendation.router, prefix="/api/v1", tags=["graph-recommendation"])
 app.include_router(graph_qa.router, prefix="/api/v1/graph", tags=["graph-qa"])
+app.include_router(graph_timeline.router, prefix="/api/v1/graph", tags=["graph-timeline"])
 
 # Unified WebSocket endpoint
 app.include_router(unified_ws.router, prefix="/api/v1", tags=["unified-ws"])

@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { describeGraphRecommendation } from "../lib/graph-recommendation-ui.ts";
+import {
+  describeGraphRecommendation,
+  getGraphRecommendationTimelineCtaLabel,
+} from "../lib/graph-recommendation-ui.ts";
 
 test("describeGraphRecommendation formats remediation copy", () => {
   const summary = describeGraphRecommendation({
@@ -27,4 +30,15 @@ test("describeGraphRecommendation formats advance copy", () => {
 
   assert.equal(summary.badge, "Tiếp theo");
   assert.match(summary.message, /tiên quyết|lộ trình/i);
+});
+
+test("getGraphRecommendationTimelineCtaLabel adapts to remediation mode", () => {
+  assert.equal(
+    getGraphRecommendationTimelineCtaLabel({ mode: "remediate" }),
+    "Vì sao cần ôn lại?",
+  );
+  assert.equal(
+    getGraphRecommendationTimelineCtaLabel({ mode: "advance" }),
+    "Vì sao được đề xuất?",
+  );
 });

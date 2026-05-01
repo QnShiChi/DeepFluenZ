@@ -80,6 +80,34 @@ GraphRemediationStatus = Literal[
     "passed_mini_quiz",
     "completed",
 ]
+LearningTimelineCategory = Literal["node", "quiz", "remediation", "recommendation"]
+LearningTimelineEventType = Literal[
+    "node_started",
+    "node_mastered",
+    "quiz_failed",
+    "quiz_passed",
+    "remediation_recommended",
+    "remediation_started",
+    "remediation_mini_quiz_passed",
+    "remediation_completed",
+    "recommendation_changed",
+]
+LearningTimelineReasonTag = Literal[
+    "prerequisite_ready",
+    "recent_weakness",
+    "retry_passed",
+    "remediation_active",
+    "remediation_cleared",
+    "advanced_to_next",
+    "manual_retry",
+]
+LearningTimelineActionKind = Literal[
+    "focus_node",
+    "open_node_detail",
+    "retry_quiz",
+    "start_remediation",
+    "open_recommendation_target",
+]
 
 
 class SourceRef(BaseModel):
@@ -244,3 +272,28 @@ class GraphRemediationCacheEntry(BaseModel):
     lesson_artifact: dict[str, object] = Field(default_factory=dict)
     mini_quiz_artifact: dict[str, object] = Field(default_factory=dict)
     created_at: str = ""
+
+
+class LearningTimelineAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: LearningTimelineActionKind
+    label: str
+    payload: dict[str, object] = Field(default_factory=dict)
+
+
+class LearningTimelineEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    session_id: str
+    course_id: str
+    node_id: str = ""
+    category: LearningTimelineCategory
+    event_type: LearningTimelineEventType
+    created_at: str
+    summary: str
+    reason_tags: list[LearningTimelineReasonTag] = Field(default_factory=list)
+    details: dict[str, object] = Field(default_factory=dict)
+    actions: list[LearningTimelineAction] = Field(default_factory=list)
+    highlighted: bool = False

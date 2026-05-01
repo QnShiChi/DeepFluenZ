@@ -21,3 +21,12 @@ export function describeGraphRecommendation(recommendation: GraphRecommendation)
     message: "Đây là bước học phù hợp nhất tiếp theo dựa trên mức sẵn sàng của kiến thức tiên quyết và tiến trình của môn học.",
   };
 }
+
+export function getGraphRecommendationTimelineCtaLabel(
+  recommendation: Pick<GraphRecommendation, "mode">,
+): string {
+  if (recommendation.mode === "remediate") {
+    return "Vì sao cần ôn lại?";
+  }
+  return "Vì sao được đề xuất?";
+}

@@ -536,6 +536,18 @@ export default function QuizViewer({
     );
   }, [graphContext]);
 
+  const handleOpenTimeline = useCallback(() => {
+    if (typeof window === "undefined" || !graphContext) return;
+    window.dispatchEvent(
+      new CustomEvent("deeptutor:open-learning-timeline", {
+        detail: {
+          course_id: graphContext.course_id,
+          node_id: graphContext.node_id,
+        },
+      }),
+    );
+  }, [graphContext]);
+
   const handleToggleFollowup = useCallback(() => {
     if (!q) return;
     const key = getQuestionKey(q, idx);
@@ -862,6 +874,12 @@ export default function QuizViewer({
               >
                 {remediationCtas[2]}
               </button>
+              <button
+                onClick={handleOpenTimeline}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[12px] font-medium text-amber-900"
+              >
+                Mở learning timeline
+              </button>
             </div>
           </div>
         ) : null}
@@ -895,6 +913,16 @@ export default function QuizViewer({
                 </div>
               </div>
             )}
+            {graphContext ? (
+              <div className="pt-1">
+                <button
+                  onClick={handleOpenTimeline}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+                >
+                  Mở learning timeline
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
