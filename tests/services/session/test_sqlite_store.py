@@ -229,6 +229,71 @@ def test_store_persists_graph_adaptive_gate_directly(store: SQLiteSessionStore) 
     assert stored["blocking_issue_ids"] == ["issue_cycle"]
 
 
+def test_store_reads_learning_timeline_events_with_filters(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Timeline session"))
+    course_payload = {
+        "course_id": "oop_course",
+        "title": "OOP",
+        "source_type": "manual_json",
+        "nodes": [],
+        "edges": [],
+        "audit": {
+            "backbone_node_ids": [],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    assert asyncio.run(store.upsert_course_template("oop_course", json.dumps(course_payload))) is True
+    assert asyncio.run(
+        store.append_learning_timeline_event(
+            {
+                "event_id": "evt_1",
+                "session_id": session["id"],
+                "course_id": "oop_course",
+                "node_id": "oop_intro",
+                "category": "quiz",
+                "event_type": "quiz_failed",
+                "created_at": "2026-04-29T09:00:00Z",
+                "summary": "Quiz failed",
+                "reason_tags": [],
+                "details": {},
+                "actions": [],
+                "highlighted": False,
+            }
+        )
+    ) is True
+    assert asyncio.run(
+        store.append_learning_timeline_event(
+            {
+                "event_id": "evt_2",
+                "session_id": session["id"],
+                "course_id": "oop_course",
+                "node_id": "oop_intro",
+                "category": "remediation",
+                "event_type": "remediation_started",
+                "created_at": "2026-04-29T09:05:00Z",
+                "summary": "Remediation started",
+                "reason_tags": [],
+                "details": {},
+                "actions": [],
+                "highlighted": True,
+            }
+        )
+    ) is True
+
+    events = asyncio.run(
+        store.get_learning_timeline(
+            "oop_course",
+            category="remediation",
+            node_id="oop_intro",
+        )
+    )
+
+    assert [event["event_id"] for event in events] == ["evt_2"]
+
+
 def test_upsert_and_read_student_state_preserves_active_remediation(store: SQLiteSessionStore) -> None:
     payload = {
         "course_id": "intro-ai",

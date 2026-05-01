@@ -257,6 +257,24 @@ class SQLiteSessionStore:
                     blocking_issue_ids_json TEXT NOT NULL DEFAULT '[]',
                     updated_at REAL NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS learning_timeline_events (
+                    event_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    course_id TEXT NOT NULL REFERENCES course_graph_templates(subject_id) ON DELETE CASCADE,
+                    node_id TEXT NOT NULL DEFAULT '',
+                    category TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    summary TEXT NOT NULL DEFAULT '',
+                    reason_tags_json TEXT NOT NULL DEFAULT '[]',
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    actions_json TEXT NOT NULL DEFAULT '[]',
+                    highlighted INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_learning_timeline_course_created
+                    ON learning_timeline_events(course_id, created_at DESC);
                 """
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -1561,6 +1579,98 @@ class SQLiteSessionStore:
 
     async def get_graph_qa_draft(self, subject_id: str) -> dict[str, Any] | None:
         return await self._run(self._get_graph_qa_draft_sync, subject_id)
+
+    def _append_learning_timeline_event_sync(self, event: dict[str, Any]) -> bool:
+        event_id = str(event.get("event_id") or "").strip()
+        session_id = str(event.get("session_id") or "").strip()
+        course_id = str(event.get("course_id") or "").strip()
+        created_at = str(event.get("created_at") or "").strip()
+        if not event_id or not session_id or not course_id or not created_at:
+            return False
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR REPLACE INTO learning_timeline_events (
+                    event_id, session_id, course_id, node_id, category, event_type,
+                    summary, reason_tags_json, details_json, actions_json, highlighted, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    session_id,
+                    course_id,
+                    str(event.get("node_id") or ""),
+                    str(event.get("category") or ""),
+                    str(event.get("event_type") or ""),
+                    str(event.get("summary") or ""),
+                    _json_dumps(event.get("reason_tags") or []),
+                    _json_dumps(event.get("details") or {}),
+                    _json_dumps(event.get("actions") or []),
+                    1 if event.get("highlighted") else 0,
+                    created_at,
+                ),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def append_learning_timeline_event(self, event: dict[str, Any]) -> bool:
+        return await self._run(self._append_learning_timeline_event_sync, event)
+
+    def _get_learning_timeline_sync(
+        self,
+        course_id: str,
+        category: str = "",
+        node_id: str = "",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        clauses = ["course_id = ?"]
+        params: list[object] = [course_id]
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+        if node_id:
+            clauses.append("node_id = ?")
+            params.append(node_id)
+        params.append(max(1, min(limit, 200)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT event_id, session_id, course_id, node_id, category, event_type,
+                       summary, reason_tags_json, details_json, actions_json, highlighted, created_at
+                FROM learning_timeline_events
+                WHERE {' AND '.join(clauses)}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [
+            {
+                "event_id": row["event_id"],
+                "session_id": row["session_id"],
+                "course_id": row["course_id"],
+                "node_id": row["node_id"],
+                "category": row["category"],
+                "event_type": row["event_type"],
+                "summary": row["summary"],
+                "reason_tags": _json_loads(row["reason_tags_json"], []),
+                "details": _json_loads(row["details_json"], {}),
+                "actions": _json_loads(row["actions_json"], []),
+                "highlighted": bool(row["highlighted"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    async def get_learning_timeline(
+        self,
+        course_id: str,
+        *,
+        category: str = "",
+        node_id: str = "",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._get_learning_timeline_sync, course_id, category, node_id, limit)
 
     def _upsert_student_state_sync(self, session_id: str, subject_id: str, state_dict: dict[str, Any]) -> bool:
         now = time.time()
