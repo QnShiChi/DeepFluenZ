@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from deeptutor.services.graph.timeline import build_learning_event, current_learning_event_timestamp
 from deeptutor.services.session import get_sqlite_session_store
 
 router = APIRouter()
@@ -52,6 +53,28 @@ async def mark_node_progress(req: MarkProgressRequest):
         req.status,
         current_node_id=req.current_node_id,
     )
+    if ok:
+        created_at = current_learning_event_timestamp()
+        await store.append_learning_timeline_event(
+            build_learning_event(
+                event_id=f"node-progress:{req.session_id}:{req.node_id}:{created_at}:{req.status}",
+                session_id=req.session_id,
+                course_id=req.course_id,
+                node_id=req.node_id,
+                category="node",
+                event_type="node_mastered" if req.status == "mastered" else "node_started",
+                summary=(
+                    "Ban da hoan thanh node nay."
+                    if req.status == "mastered"
+                    else "Ban bat dau hoc node nay."
+                ),
+                reason_tags=["advanced_to_next"] if req.status == "mastered" else [],
+                details={"status": req.status, "current_node_id": req.current_node_id or req.node_id},
+                actions=[{"kind": "focus_node", "label": "Xem node", "payload": {"node_id": req.node_id}}],
+                highlighted=req.status == "mastered",
+                created_at=created_at,
+            ).model_dump()
+        )
     return MarkProgressResponse(success=ok)
 
 

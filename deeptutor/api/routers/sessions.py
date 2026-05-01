@@ -22,6 +22,7 @@ from deeptutor.services.graph.remediation import (
     mark_remediation_mini_quiz_passed,
     resolve_remediation_target,
 )
+from deeptutor.services.graph.timeline import build_learning_event, current_learning_event_timestamp
 from deeptutor.services.session import get_sqlite_session_store
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,8 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                 "active_remediation": None,
                 "remediation_cache": {},
             }
+            previous_active_remediation = state.get("active_remediation")
+            event_created_at = current_learning_event_timestamp()
 
             if quiz_kind == "remediation_quiz":
                 passed = correct >= pass_threshold
@@ -177,6 +180,33 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                 )
                 await store.upsert_student_state(session_id, course_id, state)
                 graph_updated = True
+                if passed:
+                    await store.append_learning_timeline_event(
+                        build_learning_event(
+                            event_id=f"remediation-mini-pass:{session_id}:{node_id}:{event_created_at}",
+                            session_id=session_id,
+                            course_id=course_id,
+                            node_id=node_id,
+                            category="remediation",
+                            event_type="remediation_mini_quiz_passed",
+                            summary="Ban da vuot qua buoc kiem tra on lai ngan.",
+                            reason_tags=["remediation_active"],
+                            details={
+                                "score_ratio": score_ratio,
+                                "pass_threshold": pass_threshold,
+                                "quiz_kind": quiz_kind,
+                            },
+                            actions=[
+                                {
+                                    "kind": "retry_quiz",
+                                    "label": "Lam lai quiz",
+                                    "payload": {"node_id": node_id},
+                                }
+                            ],
+                            highlighted=True,
+                            created_at=event_created_at,
+                        ).model_dump()
+                    )
             else:
                 mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
                 graph_updated = await store.record_graph_quiz_outcome(
@@ -240,6 +270,114 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                         score_ratio=score_ratio,
                     )
                 await store.upsert_student_state(session_id, course_id, state)
+
+                await store.append_learning_timeline_event(
+                    build_learning_event(
+                        event_id=f"quiz:{session_id}:{node_id}:{event_created_at}",
+                        session_id=session_id,
+                        course_id=course_id,
+                        node_id=node_id,
+                        category="quiz",
+                        event_type="quiz_passed" if passed else "quiz_failed",
+                        summary=(
+                            "Ban da vuot qua quiz cua node nay."
+                            if passed
+                            else "Ban chua vuot qua quiz cua node nay."
+                        ),
+                        reason_tags=["retry_passed"] if passed and previous_active_remediation else ["recent_weakness"] if not passed else [],
+                        details={
+                            "score_ratio": score_ratio,
+                            "pass_threshold": pass_threshold,
+                            "quiz_kind": quiz_kind,
+                        },
+                        actions=(
+                            []
+                            if passed
+                            else [
+                                {
+                                    "kind": "start_remediation",
+                                    "label": "On lai phan yeu",
+                                    "payload": {
+                                        "node_id": str((state.get("active_remediation") or {}).get("target_node_id") or node_id),
+                                    },
+                                }
+                            ]
+                        ),
+                        highlighted=True,
+                        created_at=event_created_at,
+                    ).model_dump()
+                )
+
+                if passed:
+                    await store.append_learning_timeline_event(
+                        build_learning_event(
+                            event_id=f"node-mastered:{session_id}:{node_id}:{event_created_at}",
+                            session_id=session_id,
+                            course_id=course_id,
+                            node_id=node_id,
+                            category="node",
+                            event_type="node_mastered",
+                            summary="Ban da hoan thanh node nay.",
+                            reason_tags=["advanced_to_next"],
+                            details={"source": "quiz_result"},
+                            actions=[{"kind": "focus_node", "label": "Xem node", "payload": {"node_id": node_id}}],
+                            highlighted=True,
+                            created_at=event_created_at,
+                        ).model_dump()
+                    )
+                    if previous_active_remediation:
+                        await store.append_learning_timeline_event(
+                            build_learning_event(
+                                event_id=f"remediation-complete:{session_id}:{node_id}:{event_created_at}",
+                                session_id=session_id,
+                                course_id=course_id,
+                                node_id=node_id,
+                                category="remediation",
+                                event_type="remediation_completed",
+                                summary="Ban da hoan tat vong on lai cho node nay.",
+                                reason_tags=["remediation_cleared"],
+                                details={
+                                    "score_ratio": score_ratio,
+                                    "active_remediation_status": "completed",
+                                },
+                                actions=[{"kind": "focus_node", "label": "Xem node", "payload": {"node_id": node_id}}],
+                                highlighted=True,
+                                created_at=event_created_at,
+                            ).model_dump()
+                        )
+                else:
+                    active_remediation = state.get("active_remediation") or {}
+                    if active_remediation:
+                        remediation_created_at = current_learning_event_timestamp()
+                        await store.append_learning_timeline_event(
+                            build_learning_event(
+                                event_id=f"remediation-recommended:{session_id}:{node_id}:{remediation_created_at}",
+                                session_id=session_id,
+                                course_id=course_id,
+                                node_id=str(active_remediation.get("target_node_id") or node_id),
+                                category="remediation",
+                                event_type="remediation_recommended",
+                                summary="He thong de xuat on lai phan nen tang truoc khi tiep tuc.",
+                                reason_tags=["recent_weakness", "remediation_active"],
+                                details={
+                                    "source_node_id": node_id,
+                                    "target_node_id": str(active_remediation.get("target_node_id") or node_id),
+                                    "failure_severity": str(active_remediation.get("failure_severity") or ""),
+                                    "weak_concepts": list(active_remediation.get("weak_concepts") or []),
+                                },
+                                actions=[
+                                    {
+                                        "kind": "start_remediation",
+                                        "label": "On lai phan yeu",
+                                        "payload": {
+                                            "node_id": str(active_remediation.get("target_node_id") or node_id),
+                                        },
+                                    }
+                                ],
+                                highlighted=True,
+                                created_at=remediation_created_at,
+                            ).model_dump()
+                        )
         except Exception:
             logger.warning(
                 "Failed to update graph quiz outcome for session %s course %s node %s",
