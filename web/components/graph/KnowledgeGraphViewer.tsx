@@ -3,6 +3,7 @@ import { ReactFlow, Background, Controls, Node, Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import NodeDetailPanel, { type SelectedNodeData } from "./NodeDetailPanel";
 import GraphHealthPanel from "./GraphHealthPanel";
+import LearningTimelineDrawer from "./LearningTimelineDrawer";
 import { UnifiedWSClient, StreamEvent } from "@/lib/unified-ws";
 import { apiUrl } from "@/lib/api";
 import { getSession } from "@/lib/session-api";
@@ -24,7 +25,10 @@ import {
   type NodeStatus,
 } from "@/lib/node-progress-api";
 import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
-import { describeGraphRecommendation } from "@/lib/graph-recommendation-ui";
+import {
+  describeGraphRecommendation,
+  getGraphRecommendationTimelineCtaLabel,
+} from "@/lib/graph-recommendation-ui";
 import {
   clearStoredKnowledgeGraphProgress,
   mergeKnowledgeGraphProgress,
@@ -50,6 +54,11 @@ import {
   type GraphQaSuggestedFix,
 } from "@/lib/graph-qa-api";
 import { resolveGraphQaIssueNode } from "@/lib/graph-qa-ui";
+import {
+  getGraphTimeline,
+  type GraphTimelineAction,
+  type GraphTimelineEvent,
+} from "@/lib/graph-timeline-api";
 
 type IssuesByNodeId = Record<string, Array<{ severity: "critical" | "high" | "medium" | "low"; kind: string }>>;
 
@@ -130,6 +139,9 @@ export default function KnowledgeGraphViewer({
   const [qaReport, setQaReport] = useState<GraphQaReport | null>(null);
   const [qaDraft, setQaDraft] = useState<GraphQaDraft | null>(null);
   const [isMutatingQa, setIsMutatingQa] = useState<boolean>(false);
+  const [timelineEvents, setTimelineEvents] = useState<GraphTimelineEvent[]>([]);
+  const [timelineRequestKey, setTimelineRequestKey] = useState(0);
+  const [timelineFocusedNodeId, setTimelineFocusedNodeId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resolveNodeSuggestedFixes = useCallback((nodeId: string): GraphQaSuggestedFix[] => (
@@ -152,8 +164,7 @@ export default function KnowledgeGraphViewer({
     return issuesByNodeId;
   }, []);
 
-  const selectNode = useCallback((node: Node) => {
-    setSelectedNode({
+  const buildSelectedNodeData = useCallback((node: Node): SelectedNodeData => ({
       id: node.id,
       title: (node.data as Record<string, unknown>).label as string || node.id,
       description: (node.data as Record<string, unknown>).description as string || "",
@@ -164,8 +175,11 @@ export default function KnowledgeGraphViewer({
       hasUnmetPrerequisites: Boolean((node.data as Record<string, unknown>).hasUnmetPrerequisites),
       qaIssues: qaReport?.issues.filter((issue) => issue.affected_node_ids.includes(node.id)) ?? [],
       qaSuggestedFixes: resolveNodeSuggestedFixes(node.id),
-    });
-  }, [courseId, qaReport, resolveNodeSuggestedFixes]);
+  }), [courseId, qaReport, resolveNodeSuggestedFixes]);
+
+  const selectNode = useCallback((node: Node) => {
+    setSelectedNode(buildSelectedNodeData(node));
+  }, [buildSelectedNodeData]);
 
   useEffect(() => {
     if (!selectedNode) return;
@@ -212,6 +226,41 @@ export default function KnowledgeGraphViewer({
     return nextRecommendation;
   }, [courseId, sessionId]);
 
+  const refreshTimeline = useCallback(async (
+    targetCourseId?: string | null,
+    options: { category?: string; nodeId?: string; limit?: number } = {},
+  ): Promise<GraphTimelineEvent[]> => {
+    const resolvedCourseId = targetCourseId ?? courseId;
+    if (!resolvedCourseId) {
+      setTimelineEvents([]);
+      return [];
+    }
+    const events = await getGraphTimeline(resolvedCourseId, options);
+    setTimelineEvents(events);
+    return events;
+  }, [courseId]);
+
+  const openTimeline = useCallback((nodeId = "") => {
+    if (!courseId) return;
+    setTimelineFocusedNodeId(nodeId);
+    setTimelineRequestKey((value) => value + 1);
+    void refreshTimeline(courseId, { nodeId, limit: 100 });
+  }, [courseId, refreshTimeline]);
+
+  const clearTimelineNodeFocus = useCallback(() => {
+    if (!courseId) return;
+    setTimelineFocusedNodeId("");
+    void refreshTimeline(courseId, { limit: 100 });
+  }, [courseId, refreshTimeline]);
+
+  const selectNodeById = useCallback((nodeId: string) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    if (!target) return;
+    selectNode(target);
+    setCurrentNodeId(nodeId);
+    persistRuntimeState(nodeId, dynamicNodes);
+  }, [dynamicNodes, nodes, persistRuntimeState, selectNode]);
+
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     selectNode(node);
     setCurrentNodeId(node.id);
@@ -226,10 +275,8 @@ export default function KnowledgeGraphViewer({
   }, [courseId, dynamicNodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
 
   const handleJumpToRecommended = useCallback((nodeId: string) => {
-    const target = nodes.find((node) => node.id === nodeId);
-    if (!target) return;
-    selectNode(target);
-  }, [nodes, selectNode]);
+    selectNodeById(nodeId);
+  }, [selectNodeById]);
 
   const applyCourseTemplate = useCallback((
     data: { nodes?: any[]; edges?: any[]; [key: string]: unknown },
@@ -436,6 +483,26 @@ export default function KnowledgeGraphViewer({
     }
   }, [courseId, currentNodeId, refreshRecommendation, sessionId]);
 
+  const launchNodeQuizById = useCallback((nodeId: string) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    if (!target) return;
+    const nodeData = buildSelectedNodeData(target);
+    setCurrentNodeId(nodeId);
+    persistRuntimeState(nodeId, dynamicNodes);
+    updateNodeProgress(nodeId, "explored");
+    onQuizNode?.(nodeData);
+  }, [buildSelectedNodeData, dynamicNodes, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
+
+  const handleTimelineAction = useCallback((action: GraphTimelineAction, event: GraphTimelineEvent) => {
+    const nodeId = String(action.payload?.node_id ?? event.node_id ?? "");
+    if (!nodeId) return;
+    if (action.kind === "retry_quiz") {
+      launchNodeQuizById(nodeId);
+      return;
+    }
+    selectNodeById(nodeId);
+  }, [launchNodeQuizById, selectNodeById]);
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -581,12 +648,14 @@ export default function KnowledgeGraphViewer({
     if (!courseId) {
       setQaReport(null);
       setQaDraft(null);
+      setTimelineEvents([]);
       return;
     }
 
     void refreshGraphQa(courseId);
     void refreshGraphQaDraft(courseId);
-  }, [courseId, refreshGraphQa, refreshGraphQaDraft]);
+    void refreshTimeline(courseId, { limit: 100 });
+  }, [courseId, refreshGraphQa, refreshGraphQaDraft, refreshTimeline]);
 
   useEffect(() => {
     if (!selectedNode?.id) return;
@@ -716,13 +785,40 @@ export default function KnowledgeGraphViewer({
         );
       });
       void refreshRecommendation(courseId);
+      void refreshTimeline(courseId, {
+        nodeId: timelineFocusedNodeId || detail.node_id || "",
+        limit: 100,
+      });
     };
 
     window.addEventListener("deeptutor:graph-quiz-updated", handleGraphQuizUpdated as EventListener);
+
+    const handleOpenLearningTimeline = (event: Event) => {
+      const detail = (event as CustomEvent<{ course_id?: string; node_id?: string }>).detail;
+      if (!detail || detail.course_id !== courseId) return;
+      openTimeline(detail.node_id || "");
+    };
+
+    window.addEventListener(
+      "deeptutor:open-learning-timeline",
+      handleOpenLearningTimeline as EventListener,
+    );
     return () => {
       window.removeEventListener("deeptutor:graph-quiz-updated", handleGraphQuizUpdated as EventListener);
+      window.removeEventListener(
+        "deeptutor:open-learning-timeline",
+        handleOpenLearningTimeline as EventListener,
+      );
     };
-  }, [courseId, persistRuntimeState, refreshRecommendation, sessionId]);
+  }, [
+    courseId,
+    openTimeline,
+    persistRuntimeState,
+    refreshRecommendation,
+    refreshTimeline,
+    sessionId,
+    timelineFocusedNodeId,
+  ]);
 
   return (
     <div className="w-full h-full bg-slate-50 relative">
@@ -734,6 +830,12 @@ export default function KnowledgeGraphViewer({
           <p className="mt-1 text-xs leading-relaxed text-slate-600">
             {describeGraphRecommendation(recommendation).message}
           </p>
+          <button
+            onClick={() => openTimeline(recommendation.recommended_node_id || "")}
+            className="mt-2 text-[11px] font-medium text-blue-700 underline underline-offset-2"
+          >
+            {getGraphRecommendationTimelineCtaLabel(recommendation)}
+          </button>
         </div>
       ) : null}
       <div className="absolute top-4 left-4 z-10 flex gap-2">
@@ -762,6 +864,14 @@ export default function KnowledgeGraphViewer({
         onStageSafeFixes={handleStageSafeFixes}
         onCommitDraft={handleCommitDraft}
       />
+      <LearningTimelineDrawer
+        events={timelineEvents}
+        requestKey={timelineRequestKey}
+        focusedNodeId={timelineFocusedNodeId}
+        onClearNodeFocus={clearTimelineNodeFocus}
+        onAction={handleTimelineAction}
+        onSelectNode={selectNodeById}
+      />
       <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>
         <Background />
         <Controls />
@@ -780,6 +890,7 @@ export default function KnowledgeGraphViewer({
         }}
         onClose={() => setSelectedNode(null)}
         onJumpToRecommended={handleJumpToRecommended}
+        onOpenTimeline={openTimeline}
         onAskAbout={(n) => {
           setSelectedNode(null);
           setCurrentNodeId(n.id);
