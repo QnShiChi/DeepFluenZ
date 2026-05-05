@@ -80,6 +80,31 @@ GraphRemediationStatus = Literal[
     "passed_mini_quiz",
     "completed",
 ]
+KnowledgeSignalType = Literal[
+    "quiz_passed",
+    "quiz_failed",
+    "hint_requested",
+    "retry_requested",
+    "remediation_completed",
+    "remediation_failed",
+]
+NextStepAction = Literal[
+    "advance",
+    "stay_and_explain",
+    "give_micro_quiz",
+    "start_targeted_remediation",
+    "fallback_to_prerequisite",
+]
+NextStepReasonTag = Literal[
+    "mastery_high",
+    "mastery_uncertain",
+    "recent_failure",
+    "retry_loop_detected",
+    "hint_dependence",
+    "prerequisite_risk_high",
+    "remediation_recovered",
+    "ready_to_advance",
+]
 LearningTimelineCategory = Literal["node", "quiz", "remediation", "recommendation"]
 LearningTimelineEventType = Literal[
     "node_started",
@@ -272,6 +297,53 @@ class GraphRemediationCacheEntry(BaseModel):
     lesson_artifact: dict[str, object] = Field(default_factory=dict)
     mini_quiz_artifact: dict[str, object] = Field(default_factory=dict)
     created_at: str = ""
+
+
+class NodeKnowledgeState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mastery_score: float = 0.0
+    stuck_score: float = 0.0
+    prerequisite_risk: float = 0.0
+    confidence_score: float = 0.5
+    attempt_count: int = 0
+    hint_count: int = 0
+    last_outcome: str = ""
+    recent_signals: list[str] = Field(default_factory=list)
+    last_interacted_at: str = ""
+
+
+class KnowledgeSignal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    signal_type: KnowledgeSignalType
+    node_id: str
+    score_ratio: float | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class NextStepDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: NextStepAction
+    target_node_id: str = ""
+    reason_tags: list[NextStepReasonTag] = Field(default_factory=list)
+    explanation_summary: str = ""
+    recommended_difficulty: str = ""
+    should_record_timeline: bool = True
+
+
+class SessionKnowledgeState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    course_id: str
+    active_node_id: str = ""
+    nodes: dict[str, NodeKnowledgeState] = Field(default_factory=dict)
+    last_policy_action: str = ""
+    last_policy_reason_tags: list[str] = Field(default_factory=list)
+    next_step_decision: NextStepDecision | None = None
+    last_updated_at: str = ""
 
 
 class LearningTimelineAction(BaseModel):
