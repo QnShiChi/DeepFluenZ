@@ -98,6 +98,25 @@ class CourseAssistantCapability(BaseCapability):
         template = self._load_prompt_template(name)
         return template.format(**values)
 
+    def _build_next_step_hint(self, config: dict[str, object]) -> str:
+        decision = config.get("next_step_decision")
+        if not isinstance(decision, dict):
+            return ""
+
+        action = str(decision.get("action", "") or "")
+        target_node_id = str(decision.get("target_node_id", "") or "")
+        explanation = str(decision.get("explanation_summary", "") or "")
+        if not action:
+            return ""
+
+        return (
+            "[NEXT_STEP_TUTOR]\n"
+            f"action={action}\n"
+            f"target_node_id={target_node_id}\n"
+            f"explanation={explanation}\n"
+            "Use this guidance to decide whether to explain, remediate, or advance.\n"
+        )
+
     def _parse_llm_json(self, raw: str) -> dict[str, Any]:
         text = str(raw or "").strip()
         if not text:
@@ -152,7 +171,14 @@ class CourseAssistantCapability(BaseCapability):
                 kb_name=kb_name,
                 grounded_context=grounded_context,
             ),
-            system_prompt="Bạn là trợ giảng đại học. Trả lời bằng tiếng Việt.",
+            system_prompt="\n\n".join(
+                part
+                for part in [
+                    "Bạn là trợ giảng đại học. Trả lời bằng tiếng Việt.",
+                    self._build_next_step_hint(context.config_overrides or {}),
+                ]
+                if part
+            ),
             provider_name=llm_config.binding,
             model=llm_config.model,
             api_key=llm_config.api_key,

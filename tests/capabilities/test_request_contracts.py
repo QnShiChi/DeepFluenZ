@@ -52,3 +52,17 @@ def test_validate_capability_config_allows_deep_question_remediation_graph_conte
         "paper_path": "",
         "max_questions": 10,
     }
+
+
+def test_validate_capability_config_strips_course_assistant_next_step_payload() -> None:
+    config = validate_capability_config(
+        "course_assistant",
+        {
+            "mode": "qa",
+            "_persist_user_message": True,
+            "next_step_decision": {"action": "stay_and_explain"},
+        },
+    )
+
+    assert config["mode"] == "qa"
+    assert "next_step_decision" not in config
