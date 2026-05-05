@@ -246,3 +246,31 @@ def test_submit_remediation_quiz_failure_increments_attempt_count(store: SQLiteS
     assert state["active_remediation"]["status"] == "recommended"
     assert state["active_remediation"]["attempt_count"] == 1
     assert state["active_remediation"]["last_remediation_quiz_score"] == 0.0
+
+
+def test_submit_graph_quiz_failure_updates_in_session_tutor_decision(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Tutor Session"))
+    _seed_course(store)
+    payload = sessions_module.QuizResultsRequest.model_validate(
+        {
+            "answers": _graph_quiz_answers([False, False, True]),
+            "graph_context": {
+                "course_id": "intro-ai",
+                "node_id": "topic_search",
+                "quiz_kind": "node_quiz",
+                "node_difficulty": "easy",
+                "question_concept_map": {"q1": ["state_space"], "q2": ["state_space"]},
+                "prerequisite_node_id": "topic_intro",
+            },
+        }
+    )
+
+    response = asyncio.run(sessions_module.record_quiz_results(session["id"], payload))
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+
+    assert response["recorded"] is True
+    assert response["next_step_decision"] is not None
+    assert state is not None
+    decision = state["in_session_knowledge_state"]["next_step_decision"]
+    assert decision["action"] in {"start_targeted_remediation", "fallback_to_prerequisite"}
+    assert "recent_failure" in decision["reason_tags"]

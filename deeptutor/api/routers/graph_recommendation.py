@@ -51,6 +51,18 @@ async def get_graph_recommendation(
 
     graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
     recommendation = recommend_next_graph_node(graph=graph, student_state=state)
+    knowledge_state = ((state or {}).get("in_session_knowledge_state") or {})
+    current_decision = knowledge_state.get("next_step_decision") or {}
+    if (
+        current_decision.get("action") == "advance"
+        and str(current_decision.get("target_node_id", "") or "")
+    ):
+        recommendation = recommendation.model_copy(
+            update={
+                "recommended_node_id": str(current_decision["target_node_id"]),
+                "mode": "advance",
+            }
+        )
     await _append_recommendation_event_if_needed(store, session_id, course_id, recommendation)
     return recommendation
 

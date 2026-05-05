@@ -125,6 +125,14 @@ LearningTimelineReasonTag = Literal[
     "remediation_cleared",
     "advanced_to_next",
     "manual_retry",
+    "mastery_high",
+    "mastery_uncertain",
+    "recent_failure",
+    "retry_loop_detected",
+    "hint_dependence",
+    "prerequisite_risk_high",
+    "remediation_recovered",
+    "ready_to_advance",
 ]
 LearningTimelineActionKind = Literal[
     "focus_node",

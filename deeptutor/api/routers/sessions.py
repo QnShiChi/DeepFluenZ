@@ -10,7 +10,8 @@ import logging
 from pydantic import BaseModel, Field, field_validator
 from fastapi import APIRouter, HTTPException, Query
 
-from deeptutor.services.graph.models import CourseKnowledgeGraph
+from deeptutor.services.graph.models import CourseKnowledgeGraph, SessionKnowledgeState
+from deeptutor.services.graph.recommendation import recommend_next_graph_node
 from deeptutor.services.graph.quiz_policy import (
     determine_failure_severity,
     determine_graph_quiz_pass_threshold,
@@ -21,6 +22,11 @@ from deeptutor.services.graph.remediation import (
     mark_remediation_mini_quiz_failed,
     mark_remediation_mini_quiz_passed,
     resolve_remediation_target,
+)
+from deeptutor.services.graph.session_knowledge_state import (
+    apply_knowledge_signal,
+    build_knowledge_signal,
+    evaluate_next_step_decision,
 )
 from deeptutor.services.graph.timeline import build_learning_event, current_learning_event_timestamp
 from deeptutor.services.session import get_sqlite_session_store
@@ -78,6 +84,23 @@ def _format_quiz_results_message(answers: list[QuizResultItem]) -> str:
         lines.append(f"{idx}. {qid}Q: {question} -> Answered: {user_answer}{suffix}")
     lines.append(f"Score: {correct}/{total} ({score_pct}%)")
     return "\n".join(lines)
+
+
+def _build_session_knowledge_state(
+    session_id: str,
+    course_id: str,
+    node_id: str,
+    state: dict[str, object],
+) -> SessionKnowledgeState:
+    return SessionKnowledgeState.model_validate(
+        state.get("in_session_knowledge_state")
+        or {
+            "session_id": session_id,
+            "course_id": course_id,
+            "active_node_id": node_id,
+            "nodes": {},
+        }
+    )
 
 
 @router.get("")
@@ -152,6 +175,8 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
     graph_context = payload.graph_context or {}
     course_id = str(graph_context.get("course_id", "") or "").strip()
     node_id = str(graph_context.get("node_id", "") or "").strip()
+    next_step_decision: dict[str, object] | None = None
+    in_session_knowledge_state: dict[str, object] | None = None
     if course_id and node_id:
         try:
             correct = sum(1 for item in payload.answers if item.is_correct)
@@ -170,6 +195,15 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
             }
             previous_active_remediation = state.get("active_remediation")
             event_created_at = current_learning_event_timestamp()
+            knowledge_state = _build_session_knowledge_state(
+                session_id,
+                course_id,
+                node_id,
+                state,
+            )
+            signal = None
+            recommended_next_node_id = ""
+            passed = False
 
             if quiz_kind == "remediation_quiz":
                 passed = correct >= pass_threshold
@@ -207,6 +241,12 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                             created_at=event_created_at,
                         ).model_dump()
                     )
+                signal = build_knowledge_signal(
+                    signal_type="remediation_completed" if passed else "remediation_failed",
+                    node_id=node_id,
+                    score_ratio=score_ratio,
+                    metadata={"quiz_kind": quiz_kind},
+                )
             else:
                 mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
                 graph_updated = await store.record_graph_quiz_outcome(
@@ -241,6 +281,9 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
 
                 if passed:
                     state = clear_completed_remediation(state, passed_node_id=node_id)
+                    if graph is not None:
+                        recommendation = recommend_next_graph_node(graph=graph, student_state=state)
+                        recommended_next_node_id = recommendation.recommended_node_id
                 else:
                     prerequisite_weakness = bool(graph_context.get("prerequisite_weakness"))
                     severity = determine_failure_severity(
@@ -270,6 +313,15 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                         score_ratio=score_ratio,
                     )
                 await store.upsert_student_state(session_id, course_id, state)
+                signal = build_knowledge_signal(
+                    signal_type="quiz_passed" if passed else "quiz_failed",
+                    node_id=node_id,
+                    score_ratio=score_ratio,
+                    metadata={
+                        "quiz_kind": quiz_kind,
+                        "weak_concepts": weak_concepts,
+                    },
+                )
 
                 await store.append_learning_timeline_event(
                     build_learning_event(
@@ -378,6 +430,61 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                                 created_at=remediation_created_at,
                             ).model_dump()
                         )
+
+            if signal is not None:
+                knowledge_state = apply_knowledge_signal(knowledge_state, signal)
+                node_knowledge_state = knowledge_state.nodes.get(node_id)
+                active_remediation = state.get("active_remediation") or {}
+                prerequisite_target_id = ""
+                if not passed and active_remediation:
+                    prerequisite_target_id = str(active_remediation.get("target_node_id") or "")
+                    if node_knowledge_state is not None:
+                        if prerequisite_target_id and prerequisite_target_id != node_id:
+                            node_knowledge_state.prerequisite_risk = max(
+                                node_knowledge_state.prerequisite_risk,
+                                0.85,
+                            )
+                        else:
+                            node_knowledge_state.stuck_score = max(
+                                node_knowledge_state.stuck_score,
+                                0.7,
+                            )
+                        knowledge_state.nodes[node_id] = node_knowledge_state
+
+                decision = evaluate_next_step_decision(
+                    knowledge_state,
+                    target_node_id=node_id,
+                    prerequisite_node_id=prerequisite_target_id,
+                    recommended_next_node_id=recommended_next_node_id,
+                )
+                knowledge_state.next_step_decision = decision
+                knowledge_state.last_policy_action = decision.action
+                knowledge_state.last_policy_reason_tags = list(decision.reason_tags)
+                state["in_session_knowledge_state"] = knowledge_state.model_dump()
+                await store.upsert_student_state(session_id, course_id, state)
+                next_step_decision = decision.model_dump()
+                in_session_knowledge_state = knowledge_state.model_dump()
+
+                if decision.should_record_timeline:
+                    await store.append_learning_timeline_event(
+                        build_learning_event(
+                            event_id=f"next-step:{session_id}:{node_id}:{event_created_at}",
+                            session_id=session_id,
+                            course_id=course_id,
+                            node_id=decision.target_node_id or node_id,
+                            category="recommendation",
+                            event_type="recommendation_changed",
+                            summary=decision.explanation_summary,
+                            reason_tags=list(decision.reason_tags),
+                            details={
+                                "next_step_action": decision.action,
+                                "target_node_id": decision.target_node_id,
+                            },
+                            actions=[],
+                            highlighted=True,
+                            created_at=event_created_at,
+                        ).model_dump()
+                    )
         except Exception:
             logger.warning(
                 "Failed to update graph quiz outcome for session %s course %s node %s",
@@ -393,4 +500,6 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
         "notebook_count": notebook_count,
         "content": content,
         "graph_updated": graph_updated,
+        "next_step_decision": next_step_decision,
+        "in_session_knowledge_state": in_session_knowledge_state,
     }
