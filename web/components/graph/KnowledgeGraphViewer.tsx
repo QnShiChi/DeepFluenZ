@@ -22,6 +22,7 @@ import {
   markNodeProgress,
   setCurrentGraphNode,
   type DynamicKnowledgeGraphNode,
+  type NextStepDecisionSnapshot,
   type NodeStatus,
 } from "@/lib/node-progress-api";
 import { getGraphRecommendation, type GraphRecommendation } from "@/lib/graph-recommendation-api";
@@ -59,6 +60,7 @@ import {
   type GraphTimelineAction,
   type GraphTimelineEvent,
 } from "@/lib/graph-timeline-api";
+import { describeNextStepDecision } from "@/lib/next-step-tutor-ui";
 
 type IssuesByNodeId = Record<string, Array<{ severity: "critical" | "high" | "medium" | "low"; kind: string }>>;
 
@@ -134,6 +136,7 @@ export default function KnowledgeGraphViewer({
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
+  const [nextStepDecision, setNextStepDecision] = useState<NextStepDecisionSnapshot | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const [qaReport, setQaReport] = useState<GraphQaReport | null>(null);
@@ -615,7 +618,14 @@ export default function KnowledgeGraphViewer({
     });
     const progressPromise = shouldLoadProgress && sessionId
       ? getNodeProgress(sessionId, courseId)
-      : Promise.resolve({ progress: {}, current_node_id: "", dynamic_nodes: [], active_remediation: null });
+      : Promise.resolve({
+          progress: {},
+          current_node_id: "",
+          dynamic_nodes: [],
+          active_remediation: null,
+          in_session_knowledge_state: null,
+          next_step_decision: null,
+        });
     const recommendationPromise = shouldLoadProgress && sessionId
       ? getGraphRecommendation(sessionId, courseId)
       : Promise.resolve(null);
@@ -638,6 +648,7 @@ export default function KnowledgeGraphViewer({
         setCurrentNodeId(mergedRuntimeState.currentNodeId);
         setDynamicNodes(mergedRuntimeState.dynamicNodes);
         setActiveRemediation(progressSnapshot.active_remediation ?? null);
+        setNextStepDecision(progressSnapshot.next_step_decision ?? null);
         persistRuntimeState(mergedRuntimeState.currentNodeId, mergedRuntimeState.dynamicNodes);
         setRecommendation(recommendationData);
       })
@@ -779,6 +790,7 @@ export default function KnowledgeGraphViewer({
         setCurrentNodeId(progressSnapshot.current_node_id || detail.node_id || "");
         setDynamicNodes(progressSnapshot.dynamic_nodes ?? []);
         setActiveRemediation(progressSnapshot.active_remediation ?? null);
+        setNextStepDecision(progressSnapshot.next_step_decision ?? null);
         persistRuntimeState(
           progressSnapshot.current_node_id || detail.node_id || "",
           progressSnapshot.dynamic_nodes ?? [],
@@ -838,6 +850,16 @@ export default function KnowledgeGraphViewer({
           </button>
         </div>
       ) : null}
+      {nextStepDecision ? (
+        <div className="absolute top-52 left-4 z-10 w-72 rounded-xl border border-sky-200 bg-white/95 p-3 shadow-sm">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-600">
+            {describeNextStepDecision(nextStepDecision).badge}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            {describeNextStepDecision(nextStepDecision).summary}
+          </p>
+        </div>
+      ) : null}
       <div className="absolute top-4 left-4 z-10 flex gap-2">
         <input 
           type="file" 
@@ -883,6 +905,12 @@ export default function KnowledgeGraphViewer({
           recommendedNodeId: recommendation.recommended_node_id,
           badge: describeGraphRecommendation(recommendation).badge,
           message: describeGraphRecommendation(recommendation).message,
+        } : undefined}
+        nextStepDecision={nextStepDecision ? {
+          badge: describeNextStepDecision(nextStepDecision).badge,
+          ctaLabel: describeNextStepDecision(nextStepDecision).ctaLabel,
+          message: describeNextStepDecision(nextStepDecision).summary,
+          targetNodeId: nextStepDecision.target_node_id,
         } : undefined}
         qaIssues={selectedNode?.qaIssues ?? []}
         onApplyQaFix={(fixId) => {

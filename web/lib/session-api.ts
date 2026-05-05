@@ -96,6 +96,14 @@ export interface GraphQuizContext {
   requested_question_count?: number;
 }
 
+export interface QuizResultsResponse {
+  recorded: boolean;
+  notebook_count?: number;
+  graph_updated?: boolean;
+  next_step_decision?: Record<string, unknown> | null;
+  in_session_knowledge_state?: Record<string, unknown> | null;
+}
+
 export interface SessionExamAttemptSummary {
   attempt_id: string;
   exam_id: string;
@@ -172,7 +180,7 @@ export async function recordQuizResults(
   sessionId: string,
   answers: QuizResultItem[],
   graphContext?: GraphQuizContext | null,
-): Promise<void> {
+): Promise<QuizResultsResponse> {
   const response = await fetch(apiUrl(`/api/v1/sessions/${sessionId}/quiz-results`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -181,7 +189,7 @@ export async function recordQuizResults(
       ...(graphContext ? { graph_context: graphContext } : {}),
     }),
   });
-  await expectJson<{ recorded: boolean }>(response);
+  return expectJson<QuizResultsResponse>(response);
 }
 
 export async function listSessionExamAttempts(

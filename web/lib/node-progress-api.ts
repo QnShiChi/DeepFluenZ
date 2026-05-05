@@ -1,5 +1,3 @@
-import { apiUrl } from "@/lib/api";
-
 export type NodeStatus = "explored" | "mastered";
 
 export interface DynamicKnowledgeGraphNode {
@@ -25,6 +23,33 @@ export interface NodeProgressSnapshot {
   current_node_id: string;
   dynamic_nodes: DynamicKnowledgeGraphNode[];
   active_remediation: ActiveGraphRemediationSnapshot | null;
+  in_session_knowledge_state?: Record<string, unknown> | null;
+  next_step_decision?: NextStepDecisionSnapshot | null;
+}
+
+export interface NextStepDecisionSnapshot {
+  action: string;
+  target_node_id: string;
+  reason_tags: string[];
+  explanation_summary: string;
+}
+
+export function normalizeNodeProgressSnapshot(
+  data: Record<string, unknown>,
+): NodeProgressSnapshot {
+  return {
+    progress: (data.progress ?? {}) as Record<string, NodeStatus>,
+    current_node_id: String(data.current_node_id ?? ""),
+    dynamic_nodes: (data.dynamic_nodes ?? []) as DynamicKnowledgeGraphNode[],
+    active_remediation: (data.active_remediation ?? null) as ActiveGraphRemediationSnapshot | null,
+    in_session_knowledge_state: (data.in_session_knowledge_state ?? null) as Record<string, unknown> | null,
+    next_step_decision: (data.next_step_decision ?? null) as NodeProgressSnapshot["next_step_decision"],
+  };
+}
+
+async function resolveApiUrl(path: string): Promise<string> {
+  const { apiUrl } = await import("./api.ts");
+  return apiUrl(path);
 }
 
 export async function markNodeProgress(
@@ -35,7 +60,7 @@ export async function markNodeProgress(
   currentNodeId?: string,
 ): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl("/api/v1/graph/node-progress"), {
+    const res = await fetch(await resolveApiUrl("/api/v1/graph/node-progress"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -58,7 +83,7 @@ export async function setCurrentGraphNode(
   nodeId: string,
 ): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl("/api/v1/graph/current-node"), {
+    const res = await fetch(await resolveApiUrl("/api/v1/graph/current-node"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -79,7 +104,9 @@ export async function getNodeProgress(
 ): Promise<NodeProgressSnapshot> {
   try {
     const res = await fetch(
-      apiUrl(`/api/v1/graph/node-progress/${encodeURIComponent(courseId)}?session_id=${encodeURIComponent(sessionId)}`),
+      await resolveApiUrl(
+        `/api/v1/graph/node-progress/${encodeURIComponent(courseId)}?session_id=${encodeURIComponent(sessionId)}`,
+      ),
     );
     if (!res.ok) {
       return {
@@ -87,21 +114,20 @@ export async function getNodeProgress(
         current_node_id: "",
         dynamic_nodes: [],
         active_remediation: null,
+        in_session_knowledge_state: null,
+        next_step_decision: null,
       };
     }
-    const data = await res.json();
-    return {
-      progress: (data.progress ?? {}) as Record<string, NodeStatus>,
-      current_node_id: String(data.current_node_id ?? ""),
-      dynamic_nodes: (data.dynamic_nodes ?? []) as DynamicKnowledgeGraphNode[],
-      active_remediation: (data.active_remediation ?? null) as ActiveGraphRemediationSnapshot | null,
-    };
+    const data = (await res.json()) as Record<string, unknown>;
+    return normalizeNodeProgressSnapshot(data);
   } catch {
     return {
       progress: {},
       current_node_id: "",
       dynamic_nodes: [],
       active_remediation: null,
+      in_session_knowledge_state: null,
+      next_step_decision: null,
     };
   }
 }

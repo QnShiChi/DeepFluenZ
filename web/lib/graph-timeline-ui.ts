@@ -19,6 +19,14 @@ const REASON_TAG_LABELS: Record<GraphTimelineReasonTag, string> = {
   remediation_cleared: "Đã hoàn thành ôn lại",
   advanced_to_next: "Đã tiến sang bước mới",
   manual_retry: "Chủ động làm lại",
+  mastery_high: "Mức nắm vững cao",
+  mastery_uncertain: "Mức nắm vững chưa chắc chắn",
+  recent_failure: "Vừa gặp lỗi gần đây",
+  retry_loop_detected: "Đang lặp lại cùng một lỗi",
+  hint_dependence: "Đang phụ thuộc nhiều vào gợi ý",
+  prerequisite_risk_high: "Rủi ro thiếu nền tảng cao",
+  remediation_recovered: "Đã hồi phục sau ôn tập",
+  ready_to_advance: "Sẵn sàng tiến lên",
 };
 
 export function getTimelineCategoryLabel(category: GraphTimelineCategory): string {

@@ -21,6 +21,7 @@ import QuestionFollowupPanel, {
 import { useUnifiedChat } from "@/context/UnifiedChatContext";
 import { getUserAnswer, isQuizAnswerCorrect } from "@/lib/quiz-grading";
 import { buildGraphRemediationRequest } from "@/lib/knowledge-graph-actions";
+import { describeNextStepDecision, type NextStepDecision } from "@/lib/next-step-tutor-ui";
 import { buildQuizFollowupConfig, type QuizQuestion } from "@/lib/quiz-types";
 import { describeRemediationCtaSet, didPassGraphQuiz } from "@/lib/remediation-ui";
 import {
@@ -89,6 +90,7 @@ export default function QuizViewer({
   const [categoryDropdownKey, setCategoryDropdownKey] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryBusy, setCategoryBusy] = useState(false);
+  const [nextStepDecision, setNextStepDecision] = useState<NextStepDecision | null>(null);
 
   const q = questions[idx];
   const ans = answers[idx] ?? EMPTY_ANSWER;
@@ -129,6 +131,7 @@ export default function QuizViewer({
     setBookmarked({});
     setCategoryDropdownKey(null);
     setNewCategoryName("");
+    setNextStepDecision(null);
     lastReportedSignatureRef.current = "";
   }, [quizInstanceKey]);
 
@@ -451,7 +454,8 @@ export default function QuizViewer({
     if (!signature || signature === lastReportedSignatureRef.current) return;
     lastReportedSignatureRef.current = signature;
     void recordQuizResults(sessionId, submittedResults, graphContext)
-      .then(() => {
+      .then((result) => {
+        setNextStepDecision((result.next_step_decision ?? null) as NextStepDecision | null);
         questions.forEach((question, i) => {
           void refreshEntryId(getQuestionKey(question, i), sessionId);
         });
@@ -547,6 +551,29 @@ export default function QuizViewer({
       }),
     );
   }, [graphContext]);
+
+  const handleTutorDecisionAction = useCallback(() => {
+    if (!nextStepDecision) return;
+    if (nextStepDecision.action === "start_targeted_remediation") {
+      handleStartRemediation();
+      return;
+    }
+    if (nextStepDecision.action === "give_micro_quiz") {
+      handleRetryCurrentQuiz();
+      return;
+    }
+    if (nextStepDecision.action === "advance" || nextStepDecision.action === "fallback_to_prerequisite") {
+      handleBackToGraph();
+      return;
+    }
+    handleOpenTimeline();
+  }, [
+    handleBackToGraph,
+    handleOpenTimeline,
+    handleRetryCurrentQuiz,
+    handleStartRemediation,
+    nextStepDecision,
+  ]);
 
   const handleToggleFollowup = useCallback(() => {
     if (!q) return;
@@ -881,6 +908,23 @@ export default function QuizViewer({
                 Mở learning timeline
               </button>
             </div>
+          </div>
+        ) : null}
+
+        {completedCount === total && nextStepDecision ? (
+          <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-950">
+            <div className="text-sm font-semibold">
+              {describeNextStepDecision(nextStepDecision).badge}
+            </div>
+            <p className="mt-1 text-sm text-sky-900/90">
+              {describeNextStepDecision(nextStepDecision).summary}
+            </p>
+            <button
+              onClick={handleTutorDecisionAction}
+              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-[12px] font-medium text-sky-900"
+            >
+              {describeNextStepDecision(nextStepDecision).ctaLabel}
+            </button>
           </div>
         ) : null}
 

@@ -29,4 +29,5 @@ test("groupTimelineEventsByDay groups events under the same YYYY-MM-DD bucket", 
 test("timeline labels map categories and reason tags to user-facing copy", () => {
   assert.equal(getTimelineCategoryLabel("quiz"), "Quiz");
   assert.equal(getTimelineReasonTagLabel("recent_weakness"), "Còn yếu gần đây");
+  assert.equal(getTimelineReasonTagLabel("recent_failure"), "Vừa gặp lỗi gần đây");
 });

@@ -30,6 +30,12 @@ interface NodeDetailPanelProps {
     badge: string;
     message: string;
   };
+  nextStepDecision?: {
+    targetNodeId: string;
+    badge: string;
+    message: string;
+    ctaLabel: string;
+  };
   qaIssues?: GraphQaIssue[];
   onApplyQaFix?: (fixId: string) => void;
   onClose: () => void;
@@ -63,6 +69,7 @@ export default function NodeDetailPanel({
   node,
   progressStatus,
   recommendation,
+  nextStepDecision,
   qaIssues = [],
   onApplyQaFix,
   onClose,
@@ -170,6 +177,15 @@ export default function NodeDetailPanel({
             >
               {KNOWLEDGE_GRAPH_COPY.recommendedNodeCta}
             </button>
+          </div>
+        ) : null}
+        {nextStepDecision && nextStepDecision.targetNodeId === node.id ? (
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+            <div className="font-semibold">{nextStepDecision.badge}</div>
+            <p className="mt-1">{nextStepDecision.message}</p>
+            <div className="mt-2 text-[11px] font-medium text-sky-800">
+              {nextStepDecision.ctaLabel}
+            </div>
           </div>
         ) : null}
         {node.hasUnmetPrerequisites ? (
