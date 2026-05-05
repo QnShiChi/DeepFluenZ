@@ -731,3 +731,72 @@ def test_category_cascade_on_entry_delete(store: SQLiteSessionStore) -> None:
     asyncio.run(store.delete_notebook_entry(eid))
     cats = asyncio.run(store.list_categories())
     assert cats[0]["entry_count"] == 0
+
+
+def test_student_state_round_trips_in_session_knowledge_state(store: SQLiteSessionStore) -> None:
+    session = asyncio.run(store.create_session(title="Knowledge state session"))
+    asyncio.run(
+        store.upsert_course_template(
+            "intro-ai",
+            json.dumps(
+                {
+                    "course_id": "intro-ai",
+                    "title": "Intro to AI",
+                    "source_type": "manual_json",
+                    "nodes": [],
+                    "edges": [],
+                    "audit": {
+                        "backbone_node_ids": [],
+                        "enriched_node_ids": [],
+                        "backbone_edge_ids": [],
+                        "enriched_edge_ids": [],
+                        "warnings": [],
+                    },
+                }
+            ),
+        )
+    )
+    asyncio.run(
+        store.upsert_student_state(
+            session["id"],
+            "intro-ai",
+            {
+                "current_node_id": "topic_search",
+                "mastered_nodes": [],
+                "explored_nodes": ["topic_search"],
+                "dynamic_nodes": [],
+                "weak_node_ids": [],
+                "active_remediation": None,
+                "remediation_cache": {},
+                "in_session_knowledge_state": {
+                    "session_id": session["id"],
+                    "course_id": "intro-ai",
+                    "active_node_id": "topic_search",
+                    "nodes": {
+                        "topic_search": {
+                            "mastery_score": 0.2,
+                            "stuck_score": 0.1,
+                            "prerequisite_risk": 0.0,
+                            "confidence_score": 0.7,
+                            "attempt_count": 1,
+                            "hint_count": 0,
+                            "last_outcome": "pass",
+                            "recent_signals": ["quiz_passed"],
+                        }
+                    },
+                    "next_step_decision": {
+                        "action": "advance",
+                        "target_node_id": "topic_planning",
+                        "reason_tags": ["ready_to_advance"],
+                        "explanation_summary": "Ban da san sang di tiep.",
+                    },
+                },
+            },
+        )
+    )
+
+    state = asyncio.run(store.get_student_state(session["id"], "intro-ai"))
+
+    assert state is not None
+    assert state["in_session_knowledge_state"]["active_node_id"] == "topic_search"
+    assert state["in_session_knowledge_state"]["next_step_decision"]["action"] == "advance"

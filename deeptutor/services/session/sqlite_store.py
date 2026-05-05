@@ -232,6 +232,7 @@ class SQLiteSessionStore:
                     weak_nodes_json TEXT DEFAULT '[]',
                     active_remediation_json TEXT DEFAULT '',
                     remediation_cache_json TEXT DEFAULT '{}',
+                    in_session_knowledge_state_json TEXT DEFAULT '',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (session_id, subject_id)
@@ -298,6 +299,10 @@ class SQLiteSessionStore:
             if "remediation_cache_json" not in graph_cols:
                 conn.execute(
                     "ALTER TABLE student_graph_states ADD COLUMN remediation_cache_json TEXT DEFAULT '{}'"
+                )
+            if "in_session_knowledge_state_json" not in graph_cols:
+                conn.execute(
+                    "ALTER TABLE student_graph_states ADD COLUMN in_session_knowledge_state_json TEXT DEFAULT ''"
                 )
             conn.commit()
 
@@ -1681,6 +1686,9 @@ class SQLiteSessionStore:
         weak_nodes_json = _json_dumps(state_dict.get("weak_node_ids", []))
         active_remediation_json = _json_dumps(state_dict.get("active_remediation"))
         remediation_cache_json = _json_dumps(state_dict.get("remediation_cache", {}))
+        in_session_knowledge_state_json = _json_dumps(
+            state_dict.get("in_session_knowledge_state", {})
+        )
         
         with self._connect() as conn:
             cur = conn.execute(
@@ -1688,10 +1696,10 @@ class SQLiteSessionStore:
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id, 
                     mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
-                    active_remediation_json, remediation_cache_json,
+                    active_remediation_json, remediation_cache_json, in_session_knowledge_state_json,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?)
                 """,
                 (
                     session_id,
@@ -1703,6 +1711,7 @@ class SQLiteSessionStore:
                     weak_nodes_json,
                     active_remediation_json,
                     remediation_cache_json,
+                    in_session_knowledge_state_json,
                     session_id,
                     subject_id,
                     now,
@@ -1730,6 +1739,10 @@ class SQLiteSessionStore:
         payload["weak_node_ids"] = _json_loads(payload.pop("weak_nodes_json", ""), [])
         payload["active_remediation"] = _json_loads(payload.pop("active_remediation_json", ""), None)
         payload["remediation_cache"] = _json_loads(payload.pop("remediation_cache_json", ""), {})
+        payload["in_session_knowledge_state"] = _json_loads(
+            payload.pop("in_session_knowledge_state_json", ""),
+            {},
+        )
         return payload
 
     async def get_student_state(self, session_id: str, subject_id: str) -> dict[str, Any] | None:
@@ -1789,7 +1802,7 @@ class SQLiteSessionStore:
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id,
                     mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
-                    active_remediation_json, remediation_cache_json,
+                    active_remediation_json, remediation_cache_json, in_session_knowledge_state_json,
                     created_at, updated_at
                 )
                 VALUES (
@@ -1797,12 +1810,13 @@ class SQLiteSessionStore:
                     ?, COALESCE((SELECT dynamic_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'), ?, ?,
                     COALESCE((SELECT active_remediation_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
                     COALESCE((SELECT remediation_cache_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '{}'),
+                    COALESCE((SELECT in_session_knowledge_state_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
                     COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?
                 )
                 """,
                 (session_id, subject_id, resolved_current_node_id,
                  _json_dumps(mastered), session_id, subject_id, _json_dumps(explored), _json_dumps(weak_node_ids),
-                 session_id, subject_id, session_id, subject_id,
+                 session_id, subject_id, session_id, subject_id, session_id, subject_id,
                  session_id, subject_id, now, now),
             )
             conn.commit()
@@ -1833,7 +1847,7 @@ class SQLiteSessionStore:
                 INSERT OR REPLACE INTO student_graph_states (
                     session_id, subject_id, current_node_id,
                     mastered_nodes_json, dynamic_nodes_json, explored_nodes_json, weak_nodes_json,
-                    active_remediation_json, remediation_cache_json,
+                    active_remediation_json, remediation_cache_json, in_session_knowledge_state_json,
                     created_at, updated_at
                 )
                 VALUES (
@@ -1844,6 +1858,7 @@ class SQLiteSessionStore:
                     COALESCE((SELECT weak_nodes_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '[]'),
                     COALESCE((SELECT active_remediation_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
                     COALESCE((SELECT remediation_cache_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), '{}'),
+                    COALESCE((SELECT in_session_knowledge_state_json FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ''),
                     COALESCE((SELECT created_at FROM student_graph_states WHERE session_id = ? AND subject_id = ?), ?), ?
                 )
                 """,
@@ -1851,6 +1866,8 @@ class SQLiteSessionStore:
                     session_id,
                     subject_id,
                     node_id,
+                    session_id,
+                    subject_id,
                     session_id,
                     subject_id,
                     session_id,
