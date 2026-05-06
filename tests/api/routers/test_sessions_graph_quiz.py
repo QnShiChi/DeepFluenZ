@@ -91,6 +91,8 @@ def test_submit_graph_quiz_failure_creates_active_remediation(store: SQLiteSessi
     assert state["active_remediation"]["source_node_id"] == "topic_search"
     assert state["active_remediation"]["status"] == "recommended"
     assert sorted(state["active_remediation"]["weak_concepts"]) == ["search_tree", "state_space"]
+    assert state["review_state"]["nodes"]["topic_search"]["review_mode"] == "focused_review"
+    assert state["review_state"]["queue"][0]["node_id"] == "topic_search"
     events = asyncio.run(store.get_learning_timeline("intro-ai", limit=10))
     assert [event["event_type"] for event in events[:2]] == [
         "remediation_recommended",
@@ -195,6 +197,7 @@ def test_submit_remediation_quiz_success_marks_passed_mini_quiz(store: SQLiteSes
     assert state is not None
     assert state["active_remediation"]["status"] == "passed_mini_quiz"
     assert "topic_search" not in state["mastered_nodes"]
+    assert state["review_state"]["nodes"]["topic_search"]["review_mode"] == "light_recall_check"
 
 
 def test_submit_remediation_quiz_failure_increments_attempt_count(store: SQLiteSessionStore) -> None:

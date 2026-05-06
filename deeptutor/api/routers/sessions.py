@@ -16,6 +16,7 @@ from deeptutor.services.graph.quiz_policy import (
     determine_failure_severity,
     determine_graph_quiz_pass_threshold,
 )
+from deeptutor.services.graph.review import rank_review_queue, record_review_signal
 from deeptutor.services.graph.remediation import (
     clear_completed_remediation,
     create_or_update_remediation_state,
@@ -204,8 +205,12 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
             signal = None
             recommended_next_node_id = ""
             passed = False
+            graph = None
 
             if quiz_kind == "remediation_quiz":
+                template = await store.get_course_template(course_id)
+                if template and isinstance(template.get("template_json"), str):
+                    graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
                 passed = correct >= pass_threshold
                 state = (
                     mark_remediation_mini_quiz_passed(state, score_ratio=score_ratio)
@@ -238,15 +243,23 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                                 }
                             ],
                             highlighted=True,
-                            created_at=event_created_at,
-                        ).model_dump()
-                    )
+                                created_at=event_created_at,
+                            ).model_dump()
+                        )
                 signal = build_knowledge_signal(
                     signal_type="remediation_completed" if passed else "remediation_failed",
                     node_id=node_id,
                     score_ratio=score_ratio,
                     metadata={"quiz_kind": quiz_kind},
                 )
+                review_state = record_review_signal(
+                    review_state=state.get("review_state"),
+                    signal_type="remediation_completed" if passed else "remediation_failed",
+                    node_id=node_id,
+                    occurred_at=event_created_at,
+                    score_ratio=score_ratio,
+                )
+                state["review_state"] = review_state
             else:
                 mastery_threshold = (pass_threshold / question_count) if question_count else 1.0
                 graph_updated = await store.record_graph_quiz_outcome(
@@ -258,7 +271,6 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                 )
                 state = await store.get_student_state(session_id, course_id) or state
                 template = await store.get_course_template(course_id)
-                graph = None
                 if template and isinstance(template.get("template_json"), str):
                     graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
 
@@ -322,6 +334,14 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                         "weak_concepts": weak_concepts,
                     },
                 )
+                review_state = record_review_signal(
+                    review_state=state.get("review_state"),
+                    signal_type="quiz_passed" if passed else "quiz_failed",
+                    node_id=node_id,
+                    occurred_at=event_created_at,
+                    score_ratio=score_ratio,
+                )
+                state["review_state"] = review_state
 
                 await store.append_learning_timeline_event(
                     build_learning_event(
@@ -430,6 +450,17 @@ async def record_quiz_results(session_id: str, payload: QuizResultsRequest):
                                 created_at=remediation_created_at,
                             ).model_dump()
                         )
+
+            if graph is not None:
+                review_state = dict(state.get("review_state") or {})
+                review_state["queue"] = rank_review_queue(
+                    graph=graph,
+                    review_state=review_state,
+                    active_path_node_ids=[str(state.get("current_node_id") or node_id)],
+                    now=event_created_at,
+                )
+                state["review_state"] = review_state
+                await store.upsert_student_state(session_id, course_id, state)
 
             if signal is not None:
                 knowledge_state = apply_knowledge_signal(knowledge_state, signal)

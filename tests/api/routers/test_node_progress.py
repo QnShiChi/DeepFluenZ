@@ -64,6 +64,26 @@ async def test_get_node_progress_returns_current_node_and_dynamic_nodes(
                 "last_node_quiz_score": 0.4,
                 "last_remediation_quiz_score": None,
             },
+            "review_state": {
+                "nodes": {
+                    "topic_intro": {
+                        "last_reviewed_at": "2026-05-01T09:00:00Z",
+                        "due_at": "2026-05-06T09:00:00Z",
+                        "forgetting_risk": 0.8,
+                        "retrievability": 0.35,
+                        "review_mode": "full_node_review",
+                    }
+                },
+                "queue": [
+                    {
+                        "node_id": "topic_intro",
+                        "review_mode": "full_node_review",
+                        "score": 0.87,
+                        "due_at": "2026-05-06T09:00:00Z",
+                        "reason_codes": ["needs_review_before_advance", "high_unlock_value"],
+                    }
+                ],
+            },
         },
     )
     monkeypatch.setattr(node_progress_module, "get_sqlite_session_store", lambda: store)
@@ -81,6 +101,9 @@ async def test_get_node_progress_returns_current_node_and_dynamic_nodes(
     assert response.dynamic_nodes[0]["node_id"] == "sq_review_intro"
     assert response.active_remediation is not None
     assert response.active_remediation["target_node_id"] == "topic_intro"
+    assert response.review_queue[0]["node_id"] == "topic_intro"
+    assert response.review_state is not None
+    assert response.review_state["nodes"]["topic_intro"]["review_mode"] == "full_node_review"
 
 
 @pytest.mark.anyio
@@ -160,10 +183,14 @@ async def test_mark_node_progress_emits_node_started_timeline_event(
         )
     )
     events = await store.get_learning_timeline("intro-ai", category="node", limit=10)
+    state = await store.get_student_state(session["session_id"], "intro-ai")
 
     assert response.success is True
     assert events[0]["event_type"] == "node_started"
     assert events[0]["node_id"] == "topic_search"
+    assert state is not None
+    assert state["review_state"]["nodes"]["topic_search"]["review_mode"] == "light_recall_check"
+    assert state["review_state"]["queue"][0]["node_id"] == "topic_search"
 
 
 @pytest.mark.anyio

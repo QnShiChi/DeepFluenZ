@@ -7,9 +7,13 @@ Track student progress on Knowledge Graph nodes (explored / mastered).
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from deeptutor.services.graph.models import CourseKnowledgeGraph
+from deeptutor.services.graph.review import rank_review_queue, record_review_signal
 from deeptutor.services.graph.timeline import build_learning_event, current_learning_event_timestamp
 from deeptutor.services.session import get_sqlite_session_store
 
@@ -39,6 +43,8 @@ class NodeProgressResponse(BaseModel):
     current_node_id: str = ""
     dynamic_nodes: list[dict[str, object]] = []
     active_remediation: dict[str, object] | None = None
+    review_state: dict[str, object] | None = None
+    review_queue: list[dict[str, object]] = []
     in_session_knowledge_state: dict[str, object] | None = None
     next_step_decision: dict[str, object] | None = None
 
@@ -57,6 +63,31 @@ async def mark_node_progress(req: MarkProgressRequest):
     )
     if ok:
         created_at = current_learning_event_timestamp()
+        template = await store.get_course_template(req.course_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Course template not found")
+        graph = CourseKnowledgeGraph.model_validate(json.loads(template["template_json"]))
+        state = await store.get_student_state(req.session_id, req.course_id) or {
+            "current_node_id": req.current_node_id or req.node_id,
+            "mastered_nodes": [],
+            "explored_nodes": [],
+            "dynamic_nodes": [],
+            "active_remediation": None,
+        }
+        review_state = record_review_signal(
+            review_state=state.get("review_state"),
+            signal_type="node_viewed" if req.status == "explored" else "quiz_passed",
+            node_id=req.node_id,
+            occurred_at=created_at,
+        )
+        review_state["queue"] = rank_review_queue(
+            graph=graph,
+            review_state=review_state,
+            active_path_node_ids=[str(state.get("current_node_id") or req.node_id)],
+            now=created_at,
+        )
+        state["review_state"] = review_state
+        await store.upsert_student_state(req.session_id, req.course_id, state)
         await store.append_learning_timeline_event(
             build_learning_event(
                 event_id=f"node-progress:{req.session_id}:{req.node_id}:{created_at}:{req.status}",
@@ -97,6 +128,8 @@ async def get_node_progress(course_id: str, session_id: str):
         current_node_id=str((state or {}).get("current_node_id", "") or ""),
         dynamic_nodes=list((state or {}).get("dynamic_nodes", []) or []),
         active_remediation=(state or {}).get("active_remediation"),
+        review_state=(state or {}).get("review_state"),
+        review_queue=list(((state or {}).get("review_state") or {}).get("queue") or []),
         in_session_knowledge_state=(state or {}).get("in_session_knowledge_state"),
         next_step_decision=((state or {}).get("in_session_knowledge_state") or {}).get(
             "next_step_decision"

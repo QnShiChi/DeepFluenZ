@@ -41,7 +41,7 @@ def record_review_signal(
         node_state["last_reviewed_at"] = occurred_at
         node_state["due_at"] = (happened_at + timedelta(days=4)).isoformat().replace("+00:00", "Z")
     else:
-        node_state["forgetting_risk"] = min(0.55, float(node_state["forgetting_risk"]) + 0.1)
+        node_state["forgetting_risk"] = 0.55
         node_state["review_mode"] = "light_recall_check"
         node_state["due_at"] = (happened_at + timedelta(days=2)).isoformat().replace("+00:00", "Z")
 
