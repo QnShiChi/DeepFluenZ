@@ -6,6 +6,7 @@ export interface GraphRecommendation {
   score: number;
   reason_codes: string[];
   backup_node_ids: string[];
+  review_mode?: "focused_review" | "full_node_review" | "light_recall_check";
 }
 
 export async function getGraphRecommendation(

@@ -20,6 +20,7 @@ import {
   type ActiveGraphRemediationSnapshot,
   getNodeProgress,
   markNodeProgress,
+  type ReviewQueueEntrySnapshot,
   setCurrentGraphNode,
   type DynamicKnowledgeGraphNode,
   type NextStepDecisionSnapshot,
@@ -136,6 +137,7 @@ export default function KnowledgeGraphViewer({
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueEntrySnapshot[]>([]);
   const [nextStepDecision, setNextStepDecision] = useState<NextStepDecisionSnapshot | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
@@ -648,6 +650,7 @@ export default function KnowledgeGraphViewer({
         setCurrentNodeId(mergedRuntimeState.currentNodeId);
         setDynamicNodes(mergedRuntimeState.dynamicNodes);
         setActiveRemediation(progressSnapshot.active_remediation ?? null);
+        setReviewQueue(progressSnapshot.review_queue ?? []);
         setNextStepDecision(progressSnapshot.next_step_decision ?? null);
         persistRuntimeState(mergedRuntimeState.currentNodeId, mergedRuntimeState.dynamicNodes);
         setRecommendation(recommendationData);
@@ -790,6 +793,7 @@ export default function KnowledgeGraphViewer({
         setCurrentNodeId(progressSnapshot.current_node_id || detail.node_id || "");
         setDynamicNodes(progressSnapshot.dynamic_nodes ?? []);
         setActiveRemediation(progressSnapshot.active_remediation ?? null);
+        setReviewQueue(progressSnapshot.review_queue ?? []);
         setNextStepDecision(progressSnapshot.next_step_decision ?? null);
         persistRuntimeState(
           progressSnapshot.current_node_id || detail.node_id || "",
@@ -859,6 +863,41 @@ export default function KnowledgeGraphViewer({
             {describeNextStepDecision(nextStepDecision).summary}
           </p>
         </div>
+      ) : null}
+      {reviewQueue.length ? (
+        <section className="absolute top-84 left-4 z-10 w-72 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                Review Queue
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-amber-950">
+                Một vài node nên ôn lại lúc này để tránh quên hoặc bị kẹt ở bước tiếp theo.
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-amber-800">
+              {reviewQueue.length}
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {reviewQueue.map((entry) => (
+              <button
+                key={entry.node_id}
+                onClick={() => openTimeline(entry.node_id)}
+                className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-white px-3 py-2 text-left transition-colors hover:bg-amber-100/60"
+              >
+                <div>
+                  <div className="text-sm font-medium text-slate-900">{entry.node_id}</div>
+                  <div className="mt-1 text-xs text-slate-600">{entry.review_mode}</div>
+                </div>
+                <div className="text-xs font-semibold text-amber-800">
+                  {Math.round(entry.score * 100)}%
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
       ) : null}
       <div className="absolute top-4 left-4 z-10 flex gap-2">
         <input 

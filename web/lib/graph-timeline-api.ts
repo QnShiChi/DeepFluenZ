@@ -16,7 +16,9 @@ export type GraphTimelineReasonTag =
   | "hint_dependence"
   | "prerequisite_risk_high"
   | "remediation_recovered"
-  | "ready_to_advance";
+  | "ready_to_advance"
+  | "review_due"
+  | "forgetting_risk_high";
 
 export interface GraphTimelineAction {
   kind:

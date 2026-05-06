@@ -18,11 +18,30 @@ export interface ActiveGraphRemediationSnapshot {
   last_remediation_quiz_score?: number | null;
 }
 
+export interface ReviewQueueEntrySnapshot {
+  node_id: string;
+  review_mode: "focused_review" | "full_node_review" | "light_recall_check";
+  score: number;
+  due_at: string;
+  reason_codes: string[];
+}
+
+export interface ReviewStateSnapshot {
+  nodes: Record<string, {
+    due_at: string;
+    forgetting_risk: number;
+    retrievability: number;
+    review_mode: ReviewQueueEntrySnapshot["review_mode"];
+  }>;
+}
+
 export interface NodeProgressSnapshot {
   progress: Record<string, NodeStatus>;
   current_node_id: string;
   dynamic_nodes: DynamicKnowledgeGraphNode[];
   active_remediation: ActiveGraphRemediationSnapshot | null;
+  review_state?: ReviewStateSnapshot | null;
+  review_queue?: ReviewQueueEntrySnapshot[];
   in_session_knowledge_state?: Record<string, unknown> | null;
   next_step_decision?: NextStepDecisionSnapshot | null;
 }
@@ -42,6 +61,8 @@ export function normalizeNodeProgressSnapshot(
     current_node_id: String(data.current_node_id ?? ""),
     dynamic_nodes: (data.dynamic_nodes ?? []) as DynamicKnowledgeGraphNode[],
     active_remediation: (data.active_remediation ?? null) as ActiveGraphRemediationSnapshot | null,
+    review_state: (data.review_state ?? null) as ReviewStateSnapshot | null,
+    review_queue: (data.review_queue ?? []) as ReviewQueueEntrySnapshot[],
     in_session_knowledge_state: (data.in_session_knowledge_state ?? null) as Record<string, unknown> | null,
     next_step_decision: (data.next_step_decision ?? null) as NodeProgressSnapshot["next_step_decision"],
   };
@@ -114,6 +135,8 @@ export async function getNodeProgress(
         current_node_id: "",
         dynamic_nodes: [],
         active_remediation: null,
+        review_state: null,
+        review_queue: [],
         in_session_knowledge_state: null,
         next_step_decision: null,
       };
@@ -126,6 +149,8 @@ export async function getNodeProgress(
       current_node_id: "",
       dynamic_nodes: [],
       active_remediation: null,
+      review_state: null,
+      review_queue: [],
       in_session_knowledge_state: null,
       next_step_decision: null,
     };

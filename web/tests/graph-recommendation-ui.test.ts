@@ -32,10 +32,28 @@ test("describeGraphRecommendation formats advance copy", () => {
   assert.match(summary.message, /tiên quyết|lộ trình/i);
 });
 
+test("describeGraphRecommendation formats review copy for full node review", () => {
+  const summary = describeGraphRecommendation({
+    recommended_node_id: "topic_intro",
+    mode: "review",
+    score: 0.83,
+    reason_codes: ["needs_review_before_advance", "high_unlock_value"],
+    backup_node_ids: [],
+    review_mode: "full_node_review",
+  });
+
+  assert.equal(summary.badge, "Ôn tập");
+  assert.match(summary.message, /nền tảng|quan trọng/i);
+});
+
 test("getGraphRecommendationTimelineCtaLabel adapts to remediation mode", () => {
   assert.equal(
     getGraphRecommendationTimelineCtaLabel({ mode: "remediate" }),
     "Vì sao cần ôn lại?",
+  );
+  assert.equal(
+    getGraphRecommendationTimelineCtaLabel({ mode: "review" }),
+    "Vì sao nên ôn tập?",
   );
   assert.equal(
     getGraphRecommendationTimelineCtaLabel({ mode: "advance" }),

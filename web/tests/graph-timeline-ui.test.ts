@@ -30,4 +30,6 @@ test("timeline labels map categories and reason tags to user-facing copy", () =>
   assert.equal(getTimelineCategoryLabel("quiz"), "Quiz");
   assert.equal(getTimelineReasonTagLabel("recent_weakness"), "Còn yếu gần đây");
   assert.equal(getTimelineReasonTagLabel("recent_failure"), "Vừa gặp lỗi gần đây");
+  assert.equal(getTimelineReasonTagLabel("review_due"), "Đến lúc ôn tập");
+  assert.equal(getTimelineReasonTagLabel("forgetting_risk_high"), "Nguy cơ quên cao");
 });

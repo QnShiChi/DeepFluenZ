@@ -11,9 +11,22 @@ export function describeGraphRecommendation(recommendation: GraphRecommendation)
     };
   }
   if (recommendation.mode === "review") {
+    const reviewMode = recommendation.review_mode ?? "light_recall_check";
+    if (reviewMode === "full_node_review") {
+      return {
+        badge: "Ôn tập",
+        message: "Một phần nền tảng quan trọng đang đến lúc cần ôn lại để giữ đà học và mở khóa bước tiếp theo.",
+      };
+    }
+    if (reviewMode === "focused_review") {
+      return {
+        badge: "Ôn điểm yếu",
+        message: "Hệ thống phát hiện một nhóm ý chính đang yếu dần. Ôn nhanh phần này sẽ giúp bạn học tiếp chắc hơn.",
+      };
+    }
     return {
-      badge: "Ôn tập",
-      message: "Bạn đã tìm hiểu nút này, nhưng nên củng cố thêm trước khi tiến xa hơn trong lộ trình học.",
+      badge: "Nhắc lại ngắn",
+      message: "Bạn đã học phần này rồi, nhưng một lượt nhắc lại ngắn lúc này sẽ giúp ghi nhớ bền hơn.",
     };
   }
   return {
@@ -27,6 +40,9 @@ export function getGraphRecommendationTimelineCtaLabel(
 ): string {
   if (recommendation.mode === "remediate") {
     return "Vì sao cần ôn lại?";
+  }
+  if (recommendation.mode === "review") {
+    return "Vì sao nên ôn tập?";
   }
   return "Vì sao được đề xuất?";
 }

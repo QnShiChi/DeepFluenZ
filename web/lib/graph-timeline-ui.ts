@@ -27,6 +27,8 @@ const REASON_TAG_LABELS: Record<GraphTimelineReasonTag, string> = {
   prerequisite_risk_high: "Rủi ro thiếu nền tảng cao",
   remediation_recovered: "Đã hồi phục sau ôn tập",
   ready_to_advance: "Sẵn sàng tiến lên",
+  review_due: "Đến lúc ôn tập",
+  forgetting_risk_high: "Nguy cơ quên cao",
 };
 
 export function getTimelineCategoryLabel(category: GraphTimelineCategory): string {
