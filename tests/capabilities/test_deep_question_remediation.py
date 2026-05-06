@@ -147,6 +147,79 @@ def test_remediation_request_generates_multiple_choice_quiz_artifact(
     asyncio.run(_run())
 
 
+def test_remediation_request_ignores_session_history_and_uses_graph_scoped_topic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeCoordinator:
+        def __init__(self, **kwargs: Any) -> None:
+            captured["init"] = kwargs
+            self._callback = None
+
+        def set_ws_callback(self, callback) -> None:
+            self._callback = callback
+
+        async def generate_from_topic(self, **kwargs: Any) -> dict[str, Any]:
+            captured["topic_call"] = kwargs
+            await self._callback({"type": "idea_round", "message": "ideas"})
+            return {
+                "results": [
+                    {
+                        "qa_pair": {
+                            "question_id": "q_1",
+                            "question": "What does Dotnet Framework provide?",
+                            "question_type": "choice",
+                            "options": {"A": "Runtime", "B": "Linked list", "C": "Stack", "D": "Tree"},
+                            "correct_answer": "A",
+                            "explanation": "It provides runtime and libraries.",
+                        }
+                    }
+                ]
+            }
+
+    _install_module(
+        monkeypatch,
+        "deeptutor.agents.question.coordinator",
+        AgentCoordinator=FakeCoordinator,
+    )
+    _install_module(
+        monkeypatch,
+        "deeptutor.services.llm.config",
+        get_llm_config=lambda: SimpleNamespace(api_key="k", base_url="u", api_version="v1"),
+    )
+
+    async def _run() -> None:
+        context = UnifiedContext(
+            user_message="Ôn lại phần yếu của nút hiện tại",
+            config_overrides={
+                "mode": "custom",
+                "topic": "Ôn lại phần yếu của nút hiện tại",
+                "preference": "multiple_choice only",
+                "graph_context": {
+                    "course_id": "java-course",
+                    "node_id": "dotnet-framework",
+                    "target_node_id": "dotnet-framework",
+                    "weak_concepts": ["exception_handling"],
+                    "quiz_kind": "remediation_quiz",
+                    "requested_question_count": 1,
+                },
+            },
+            language="vi",
+            metadata={
+                "conversation_context_text": "Earlier in this session we discussed linked lists and nodes in data structures.",
+            },
+        )
+        capability = DeepQuestionCapability()
+        await _collect_events(lambda bus: capability.run(context, bus))
+
+        assert captured["topic_call"]["history_context"] == ""
+        assert "dotnet-framework" in captured["topic_call"]["user_topic"]
+        assert "exception_handling" in captured["topic_call"]["user_topic"]
+
+    asyncio.run(_run())
+
+
 def test_node_quiz_request_generates_multiple_choice_quiz_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

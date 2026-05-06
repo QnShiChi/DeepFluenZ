@@ -90,6 +90,9 @@ class DeepQuestionCapability(BaseCapability):
         history_context = str(
             context.metadata.get("conversation_context_text", "") or ""
         ).strip()
+        if isinstance(graph_context, dict) and graph_context.get("quiz_kind") == "remediation_quiz":
+            topic = self._build_remediation_topic(topic, graph_context)
+            history_context = ""
         enabled_tools = set(
             self.manifest.tools_used
             if context.enabled_tools is None
@@ -249,6 +252,33 @@ class DeepQuestionCapability(BaseCapability):
         next_result = dict(result)
         next_result["results"] = normalized_results
         return next_result
+
+    @staticmethod
+    def _build_remediation_topic(
+        topic: str,
+        graph_context: dict[str, Any],
+    ) -> str:
+        source_node_id = str(graph_context.get("node_id", "") or "").strip()
+        target_node_id = str(graph_context.get("target_node_id", "") or source_node_id).strip()
+        course_id = str(graph_context.get("course_id", "") or "").strip()
+        weak_concepts = [
+            str(concept).strip()
+            for concept in graph_context.get("weak_concepts", []) or []
+            if str(concept).strip()
+        ]
+        parts = [
+            "Generate a remediation quiz",
+            f"for course {course_id}" if course_id else "",
+            f"for source node {source_node_id}" if source_node_id else "",
+            f"targeting node {target_node_id}" if target_node_id else "",
+        ]
+        if weak_concepts:
+            parts.append(f"Focus only on these weak concepts: {', '.join(weak_concepts)}.")
+        else:
+            parts.append("Focus only on prerequisite knowledge needed for the target node.")
+        if topic and "Ôn lại phần yếu của nút hiện tại" not in topic:
+            parts.append(f"Original remediation note: {topic}")
+        return " ".join(part for part in parts if part).strip()
 
     @staticmethod
     def _collect_cost_summary(module_name: str) -> dict[str, Any] | None:

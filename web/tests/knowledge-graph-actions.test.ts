@@ -65,4 +65,10 @@ test("buildGraphRemediationRequest creates a remediation lesson payload", () => 
     (request.config.graph_context as { target_node_id?: string }).target_node_id,
     "topic_intro",
   );
+  assert.match(String(request.content), /topic_search|topic_intro|state_space/i);
+  assert.match(String((request.config as { topic?: string }).topic), /topic_search|topic_intro|state_space/i);
+  assert.match(
+    String((request.config as { preference?: string }).preference),
+    /ignore unrelated earlier chat topics/i,
+  );
 });

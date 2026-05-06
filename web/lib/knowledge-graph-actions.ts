@@ -85,10 +85,13 @@ export function buildGraphRemediationRequest(
   options: SendMessageOptions;
 } {
   const questionCount = getRemediationQuizCount(input.nodeDifficulty, input.attemptCount);
+  const weakConceptText = input.weakConcepts.length > 0
+    ? input.weakConcepts.join(", ")
+    : "general prerequisite gaps";
   const topic = input.weakConcepts.length > 0
-    ? `Review these weak concepts: ${input.weakConcepts.join(", ")}`
-    : `Review prerequisite knowledge for ${input.targetNodeId}`;
-  const content = "Ôn lại phần yếu của nút hiện tại";
+    ? `Remediation quiz for source node ${input.sourceNodeId} targeting ${input.targetNodeId}. Focus only on these weak concepts: ${weakConceptText}.`
+    : `Remediation quiz for source node ${input.sourceNodeId} targeting ${input.targetNodeId}. Focus only on prerequisite knowledge required for ${input.targetNodeId}.`;
+  const content = `Ôn lại phần yếu cho node ${input.sourceNodeId} -> ${input.targetNodeId} (${weakConceptText})`;
   const config = {
     ...buildQuizWSConfig({
       ...DEFAULT_QUIZ_CONFIG,
@@ -97,8 +100,10 @@ export function buildGraphRemediationRequest(
       num_questions: questionCount,
       difficulty: input.nodeDifficulty || "medium",
       question_type: "choice",
-      preference: "multiple_choice only; focus on the weak concepts and prerequisite gap",
+      preference:
+        "multiple_choice only; focus on the weak concepts and prerequisite gap; ignore unrelated earlier chat topics",
     }),
+    topic,
     graph_context: {
       course_id: input.courseId,
       node_id: input.sourceNodeId,
