@@ -54,6 +54,8 @@ RecommendationReasonCode = Literal[
     "close_to_current_path",
     "recent_quiz_weakness",
     "needs_review_before_advance",
+    "review_due",
+    "forgetting_risk_high",
 ]
 GraphQaSeverity = Literal["critical", "high", "medium", "low"]
 GraphQaIssueKind = Literal[
@@ -105,6 +107,14 @@ NextStepReasonTag = Literal[
     "remediation_recovered",
     "ready_to_advance",
 ]
+ReviewSignalType = Literal[
+    "node_viewed",
+    "quiz_passed",
+    "quiz_failed",
+    "remediation_completed",
+    "remediation_failed",
+]
+ReviewMode = Literal["focused_review", "full_node_review", "light_recall_check"]
 LearningTimelineCategory = Literal["node", "quiz", "remediation", "recommendation"]
 LearningTimelineEventType = Literal[
     "node_started",
@@ -116,6 +126,8 @@ LearningTimelineEventType = Literal[
     "remediation_mini_quiz_passed",
     "remediation_completed",
     "recommendation_changed",
+    "review_recommended",
+    "review_completed",
 ]
 LearningTimelineReasonTag = Literal[
     "prerequisite_ready",
@@ -133,6 +145,8 @@ LearningTimelineReasonTag = Literal[
     "prerequisite_risk_high",
     "remediation_recovered",
     "ready_to_advance",
+    "review_due",
+    "forgetting_risk_high",
 ]
 LearningTimelineActionKind = Literal[
     "focus_node",
@@ -352,6 +366,33 @@ class SessionKnowledgeState(BaseModel):
     last_policy_reason_tags: list[str] = Field(default_factory=list)
     next_step_decision: NextStepDecision | None = None
     last_updated_at: str = ""
+
+
+class GraphNodeReviewState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    last_reviewed_at: str = ""
+    due_at: str = ""
+    forgetting_risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    retrievability: float = Field(default=1.0, ge=0.0, le=1.0)
+    review_mode: ReviewMode = "light_recall_check"
+
+
+class GraphReviewQueueEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str
+    review_mode: ReviewMode
+    score: float = Field(ge=0.0, le=1.0)
+    due_at: str = ""
+    reason_codes: list[RecommendationReasonCode] = Field(default_factory=list)
+
+
+class GraphReviewState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nodes: dict[str, GraphNodeReviewState] = Field(default_factory=dict)
+    queue: list[GraphReviewQueueEntry] = Field(default_factory=list)
 
 
 class LearningTimelineAction(BaseModel):
