@@ -37,6 +37,8 @@ export function buildKnowledgeGraphQuizMessage(
     ? {
         course_id: node.courseId,
         node_id: node.id,
+        source_node_title: node.title,
+        source_node_description: node.description,
         quiz_kind: "node_quiz",
         node_difficulty: node.difficulty || "medium",
         requested_question_count: questionCount,
@@ -71,6 +73,10 @@ export interface BuildGraphRemediationRequestInput {
   courseId: string;
   sourceNodeId: string;
   targetNodeId: string;
+  sourceNodeTitle?: string;
+  sourceNodeDescription?: string;
+  targetNodeTitle?: string;
+  targetNodeDescription?: string;
   weakConcepts: string[];
   nodeDifficulty: string;
   attemptCount: number;
@@ -88,10 +94,12 @@ export function buildGraphRemediationRequest(
   const weakConceptText = input.weakConcepts.length > 0
     ? input.weakConcepts.join(", ")
     : "general prerequisite gaps";
+  const sourceNodeLabel = input.sourceNodeTitle?.trim() || input.sourceNodeId;
+  const targetNodeLabel = input.targetNodeTitle?.trim() || input.targetNodeId;
   const topic = input.weakConcepts.length > 0
-    ? `Remediation quiz for source node ${input.sourceNodeId} targeting ${input.targetNodeId}. Focus only on these weak concepts: ${weakConceptText}.`
-    : `Remediation quiz for source node ${input.sourceNodeId} targeting ${input.targetNodeId}. Focus only on prerequisite knowledge required for ${input.targetNodeId}.`;
-  const content = `Ôn lại phần yếu cho node ${input.sourceNodeId} -> ${input.targetNodeId} (${weakConceptText})`;
+    ? `Remediation quiz for source node ${sourceNodeLabel} targeting ${targetNodeLabel}. Focus only on these weak concepts: ${weakConceptText}.`
+    : `Remediation quiz for source node ${sourceNodeLabel} targeting ${targetNodeLabel}. Focus only on prerequisite knowledge required for ${targetNodeLabel}.`;
+  const content = `Ôn lại phần yếu cho node ${sourceNodeLabel} -> ${targetNodeLabel} (${weakConceptText})`;
   const config = {
     ...buildQuizWSConfig({
       ...DEFAULT_QUIZ_CONFIG,
@@ -108,6 +116,10 @@ export function buildGraphRemediationRequest(
       course_id: input.courseId,
       node_id: input.sourceNodeId,
       target_node_id: input.targetNodeId,
+      source_node_title: input.sourceNodeTitle?.trim() || "",
+      source_node_description: input.sourceNodeDescription?.trim() || "",
+      target_node_title: input.targetNodeTitle?.trim() || "",
+      target_node_description: input.targetNodeDescription?.trim() || "",
       weak_concepts: input.weakConcepts,
       node_difficulty: input.nodeDifficulty,
       quiz_kind: "remediation_quiz",

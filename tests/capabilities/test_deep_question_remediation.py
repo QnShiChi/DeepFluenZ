@@ -198,9 +198,13 @@ def test_remediation_request_ignores_session_history_and_uses_graph_scoped_topic
                 "preference": "multiple_choice only",
                 "graph_context": {
                     "course_id": "java-course",
-                    "node_id": "dotnet-framework",
-                    "target_node_id": "dotnet-framework",
-                    "weak_concepts": ["exception_handling"],
+                    "node_id": "1",
+                    "target_node_id": "1",
+                    "source_node_title": "Dotnet Framework",
+                    "source_node_description": "Nen tang runtime va thu vien cho .NET.",
+                    "target_node_title": "Dotnet Framework",
+                    "target_node_description": "Nen tang runtime va thu vien cho .NET.",
+                    "weak_concepts": [],
                     "quiz_kind": "remediation_quiz",
                     "requested_question_count": 1,
                 },
@@ -214,8 +218,9 @@ def test_remediation_request_ignores_session_history_and_uses_graph_scoped_topic
         await _collect_events(lambda bus: capability.run(context, bus))
 
         assert captured["topic_call"]["history_context"] == ""
-        assert "dotnet-framework" in captured["topic_call"]["user_topic"]
-        assert "exception_handling" in captured["topic_call"]["user_topic"]
+        assert "Dotnet Framework" in captured["topic_call"]["user_topic"]
+        assert "runtime va thu vien" in captured["topic_call"]["user_topic"]
+        assert "node 1" not in captured["topic_call"]["user_topic"]
 
     asyncio.run(_run())
 

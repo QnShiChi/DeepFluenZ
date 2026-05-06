@@ -31,6 +31,8 @@ test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB
     graph_context: {
       course_id: "intro-ai",
       node_id: "topic_intro",
+      source_node_title: "Trí Tuệ Nhân Tạo Ứng Dụng",
+      source_node_description: "Học phần cung cấp kiến thức nền tảng.",
       quiz_kind: "node_quiz",
       node_difficulty: "medium",
       requested_question_count: 5,
@@ -48,6 +50,10 @@ test("buildGraphRemediationRequest creates a remediation lesson payload", () => 
     courseId: "intro-ai",
     sourceNodeId: "topic_search",
     targetNodeId: "topic_intro",
+    sourceNodeTitle: "Tìm kiếm",
+    sourceNodeDescription: "Khái niệm tìm kiếm trong AI.",
+    targetNodeTitle: "Giới thiệu không gian trạng thái",
+    targetNodeDescription: "Nền tảng để hiểu bài toán tìm kiếm.",
     weakConcepts: ["state_space"],
     nodeDifficulty: "easy",
     attemptCount: 0,
@@ -65,8 +71,19 @@ test("buildGraphRemediationRequest creates a remediation lesson payload", () => 
     (request.config.graph_context as { target_node_id?: string }).target_node_id,
     "topic_intro",
   );
+  assert.equal(
+    (request.config.graph_context as { source_node_title?: string }).source_node_title,
+    "Tìm kiếm",
+  );
+  assert.equal(
+    (request.config.graph_context as { target_node_title?: string }).target_node_title,
+    "Giới thiệu không gian trạng thái",
+  );
   assert.match(String(request.content), /topic_search|topic_intro|state_space/i);
-  assert.match(String((request.config as { topic?: string }).topic), /topic_search|topic_intro|state_space/i);
+  assert.match(
+    String((request.config as { topic?: string }).topic),
+    /Tìm kiếm|Giới thiệu không gian trạng thái|state_space/i,
+  );
   assert.match(
     String((request.config as { preference?: string }).preference),
     /ignore unrelated earlier chat topics/i,

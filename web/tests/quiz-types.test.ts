@@ -35,6 +35,10 @@ test("extractQuizQuestions preserves remediation quiz metadata", () => {
       node_id: "topic_search",
       quiz_kind: "remediation_quiz",
       target_node_id: "topic_intro",
+      source_node_title: "Tìm kiếm",
+      source_node_description: "Khái niệm tìm kiếm trong AI.",
+      target_node_title: "Giới thiệu không gian trạng thái",
+      target_node_description: "Nền tảng để hiểu bài toán tìm kiếm.",
       weak_concepts: ["state_space"],
       node_difficulty: "easy",
     },
@@ -55,6 +59,8 @@ test("extractQuizQuestions preserves remediation quiz metadata", () => {
 
   assert.equal(questions?.[0]?.graph_context?.quiz_kind, "remediation_quiz");
   assert.equal(questions?.[0]?.graph_context?.target_node_id, "topic_intro");
+  assert.equal(questions?.[0]?.graph_context?.source_node_title, "Tìm kiếm");
+  assert.equal(questions?.[0]?.graph_context?.target_node_title, "Giới thiệu không gian trạng thái");
   assert.deepEqual(questions?.[0]?.graph_context?.weak_concepts, ["state_space"]);
   assert.equal(questions?.[0]?.graph_context?.node_difficulty, "easy");
 });

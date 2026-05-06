@@ -261,17 +261,27 @@ class DeepQuestionCapability(BaseCapability):
         source_node_id = str(graph_context.get("node_id", "") or "").strip()
         target_node_id = str(graph_context.get("target_node_id", "") or source_node_id).strip()
         course_id = str(graph_context.get("course_id", "") or "").strip()
+        source_node_title = str(graph_context.get("source_node_title", "") or "").strip()
+        source_node_description = str(graph_context.get("source_node_description", "") or "").strip()
+        target_node_title = str(graph_context.get("target_node_title", "") or "").strip()
+        target_node_description = str(graph_context.get("target_node_description", "") or "").strip()
         weak_concepts = [
             str(concept).strip()
             for concept in graph_context.get("weak_concepts", []) or []
             if str(concept).strip()
         ]
+        source_node_label = source_node_title or source_node_id
+        target_node_label = target_node_title or target_node_id
         parts = [
             "Generate a remediation quiz",
             f"for course {course_id}" if course_id else "",
-            f"for source node {source_node_id}" if source_node_id else "",
-            f"targeting node {target_node_id}" if target_node_id else "",
+            f"for source node {source_node_label}" if source_node_label else "",
+            f"targeting node {target_node_label}" if target_node_label else "",
         ]
+        if source_node_description:
+            parts.append(f"Source node summary: {source_node_description}.")
+        if target_node_description and target_node_description != source_node_description:
+            parts.append(f"Target node summary: {target_node_description}.")
         if weak_concepts:
             parts.append(f"Focus only on these weak concepts: {', '.join(weak_concepts)}.")
         else:

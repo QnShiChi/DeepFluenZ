@@ -90,6 +90,10 @@ export interface GraphQuizContext {
   node_id: string;
   quiz_kind?: "node_quiz" | "remediation_quiz";
   target_node_id?: string;
+  source_node_title?: string;
+  source_node_description?: string;
+  target_node_title?: string;
+  target_node_description?: string;
   weak_concepts?: string[];
   node_difficulty?: string;
   question_concept_map?: Record<string, string[]>;

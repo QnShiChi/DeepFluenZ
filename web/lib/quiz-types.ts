@@ -42,6 +42,10 @@ export interface QuizQuestion {
     node_id: string;
     quiz_kind?: "node_quiz" | "remediation_quiz";
     target_node_id?: string;
+    source_node_title?: string;
+    source_node_description?: string;
+    target_node_title?: string;
+    target_node_description?: string;
     weak_concepts?: string[];
     node_difficulty?: string;
   };
@@ -64,6 +68,8 @@ function buildScopedQuizQuestionId(
     node_id: string;
     quiz_kind?: "node_quiz" | "remediation_quiz";
     target_node_id?: string;
+    source_node_title?: string;
+    target_node_title?: string;
   },
 ): string {
   const baseId = rawQuestionId || `question_${index + 1}`;
@@ -127,6 +133,22 @@ export function extractQuizQuestions(
             target_node_id:
               typeof graphContextRaw.target_node_id === "string"
                 ? graphContextRaw.target_node_id
+                : undefined,
+            source_node_title:
+              typeof graphContextRaw.source_node_title === "string"
+                ? graphContextRaw.source_node_title
+                : undefined,
+            source_node_description:
+              typeof graphContextRaw.source_node_description === "string"
+                ? graphContextRaw.source_node_description
+                : undefined,
+            target_node_title:
+              typeof graphContextRaw.target_node_title === "string"
+                ? graphContextRaw.target_node_title
+                : undefined,
+            target_node_description:
+              typeof graphContextRaw.target_node_description === "string"
+                ? graphContextRaw.target_node_description
                 : undefined,
             weak_concepts: Array.isArray(graphContextRaw.weak_concepts)
               ? graphContextRaw.weak_concepts.filter(
