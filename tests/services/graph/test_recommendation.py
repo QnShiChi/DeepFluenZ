@@ -184,3 +184,31 @@ def test_recommend_next_graph_node_prioritizes_active_remediation_target() -> No
     assert recommendation.mode == "remediate"
     assert "recent_quiz_weakness" in recommendation.reason_codes
     assert recommendation.backup_node_ids
+
+
+def test_recommend_next_graph_node_prefers_due_review_over_advance_when_risk_is_high() -> None:
+    recommendation = recommend_next_graph_node(
+        graph=build_graph(),
+        student_state={
+            "current_node_id": "topic_search",
+            "mastered_nodes": ["topic_intro"],
+            "explored_nodes": ["topic_search"],
+            "review_state": {
+                "nodes": {
+                    "topic_intro": {
+                        "last_reviewed_at": "2026-05-01T09:00:00Z",
+                        "due_at": "2026-05-06T09:00:00Z",
+                        "forgetting_risk": 0.8,
+                        "retrievability": 0.35,
+                        "review_mode": "full_node_review",
+                    }
+                }
+            },
+            "_test_now": "2026-05-06T12:00:00Z",
+        },
+    )
+
+    assert recommendation.recommended_node_id == "topic_intro"
+    assert recommendation.mode == "review"
+    assert "needs_review_before_advance" in recommendation.reason_codes
+    assert "high_unlock_value" in recommendation.reason_codes

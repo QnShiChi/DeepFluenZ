@@ -62,7 +62,7 @@ def summarize_recommendation_change(recommendation: dict[str, object]) -> str:
     if mode == "remediate":
         return "He thong doi buoc tiep theo de ban on lai phan con yeu."
     if mode == "review":
-        return "He thong tam dung tien len de ban xem lai nen tang."
+        return "He thong goi y ban xem lai mot node quan trong truoc khi hoc tiep."
     return "He thong da cap nhat buoc hoc tiep theo phu hop nhat."
 
 
@@ -78,9 +78,13 @@ def timeline_reason_tags_from_recommendation(
         elif code == "recent_quiz_weakness":
             tags.append("recent_weakness")
         elif code == "needs_review_before_advance":
-            tags.append("remediation_active")
+            tags.append("review_due" if mode == "review" else "remediation_active")
+        elif code == "forgetting_risk_high":
+            tags.append("forgetting_risk_high")
         elif code in {"high_unlock_value", "close_to_current_path"}:
             tags.append("advanced_to_next")
+    if mode == "review" and "review_due" not in tags:
+        tags.append("review_due")
     if mode == "remediate" and "remediation_active" not in tags:
         tags.append("remediation_active")
     # Preserve order while removing duplicates.

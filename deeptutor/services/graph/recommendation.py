@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 
 from deeptutor.services.graph.models import CourseKnowledgeGraph, GraphRecommendation
+from deeptutor.services.graph.review import rank_review_queue
 
 
 def _build_prerequisite_maps(
@@ -88,6 +89,22 @@ def recommend_next_graph_node(
             score=0.99,
             reason_codes=["recent_quiz_weakness"],
             backup_node_ids=backup_candidates,
+        )
+
+    review_queue = rank_review_queue(
+        graph=graph,
+        review_state=student_state.get("review_state"),
+        active_path_node_ids=[node_id for node_id in [current_node_id, *explored] if node_id],
+        now=_resolve_now(student_state),
+    )
+    if review_queue:
+        top_review = review_queue[0]
+        return GraphRecommendation(
+            recommended_node_id=str(top_review["node_id"]),
+            mode="review",
+            score=float(top_review["score"]),
+            reason_codes=list(top_review["reason_codes"]),
+            backup_node_ids=[str(item["node_id"]) for item in review_queue[1:3]],
         )
 
     prerequisites, downstream = _build_prerequisite_maps(graph)
@@ -199,3 +216,7 @@ def recommend_next_graph_node(
     primary = candidates[0][1]
     backups = [candidate.recommended_node_id for _, candidate in candidates[1:3]]
     return primary.model_copy(update={"backup_node_ids": backups})
+
+
+def _resolve_now(student_state: dict[str, object]) -> str:
+    return str(student_state.get("_test_now") or "")

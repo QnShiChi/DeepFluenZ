@@ -2,6 +2,8 @@ from deeptutor.services.graph.models import LearningTimelineEvent
 from deeptutor.services.graph.timeline import (
     build_learning_event,
     should_emit_recommendation_event,
+    summarize_recommendation_change,
+    timeline_reason_tags_from_recommendation,
 )
 
 
@@ -47,3 +49,15 @@ def test_should_emit_recommendation_event_requires_meaningful_change() -> None:
 
     assert should_emit_recommendation_event(previous, current) is False
     assert should_emit_recommendation_event(previous, changed) is True
+
+
+def test_timeline_reason_tags_from_recommendation_maps_review_reason_codes() -> None:
+    tags = timeline_reason_tags_from_recommendation(
+        ["needs_review_before_advance", "forgetting_risk_high"],
+        mode="review",
+    )
+
+    assert tags == ["review_due", "forgetting_risk_high"]
+    assert "xem lai" in summarize_recommendation_change(
+        {"mode": "review", "reason_codes": ["needs_review_before_advance"]}
+    ).lower()
