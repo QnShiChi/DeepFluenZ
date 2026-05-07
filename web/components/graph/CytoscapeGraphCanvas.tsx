@@ -17,6 +17,7 @@ export interface CytoscapeGraphCanvasProps {
   nodes: CytoscapeNodeElement[];
   edges: CytoscapeEdgeElement[];
   positions?: Record<string, CytoscapeGraphPoint>;
+  surfaceVariant?: "overview" | "focus";
   className?: string;
   onNodeClick?: (nodeId: string) => void;
   onNodeDragStop?: (nodeId: string, position: CytoscapeGraphPoint) => void;
@@ -60,6 +61,7 @@ export default function CytoscapeGraphCanvas({
   nodes,
   edges,
   positions = {},
+  surfaceVariant = "overview",
   className,
   onNodeClick,
   onNodeDragStop,
@@ -91,7 +93,7 @@ export default function CytoscapeGraphCanvas({
     const cy = cytoscape({
       container: containerRef.current,
       elements,
-      style: createCytoscapeStylesheet(),
+      style: createCytoscapeStylesheet(surfaceVariant),
       layout: { name: "preset" },
       ...createCytoscapeInteractionOptions(),
     });
@@ -122,7 +124,7 @@ export default function CytoscapeGraphCanvas({
       cy.destroy();
       cyRef.current = null;
     };
-  }, [elements]);
+  }, [elements, surfaceVariant]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -131,14 +133,14 @@ export default function CytoscapeGraphCanvas({
     }
 
     cy.json({ elements });
-    cy.style(createCytoscapeStylesheet());
+    cy.style(createCytoscapeStylesheet(surfaceVariant));
     cy.nodes().forEach((node) => {
       const position = positions[node.id()];
       if (position) {
         node.position(position);
       }
     });
-  }, [elements, positions]);
+  }, [elements, positions, surfaceVariant]);
 
   useEffect(() => {
     const cy = cyRef.current;
