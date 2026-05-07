@@ -15,6 +15,8 @@ export interface SelectedNodeData {
   description: string;
   nodeType: string;
   difficulty: string;
+  parentNodeId?: string;
+  hierarchyLevel?: number;
   courseId?: string;
   graphState?: string;
   hasUnmetPrerequisites?: boolean;
@@ -53,6 +55,8 @@ const DIFFICULTY_STYLES: Record<string, string> = {
 
 const NODE_TYPE_CONFIG: Record<string, { label: string; style: string; icon: React.ElementType }> = {
   topic: { label: getKnowledgeGraphNodeTypeLabel("topic"), style: "bg-blue-100 text-blue-700 border-blue-200", icon: BookOpen },
+  lesson: { label: "Bai hoc", style: "bg-blue-100 text-blue-700 border-blue-200", icon: BookOpen },
+  subtopic: { label: "Muc con", style: "bg-cyan-100 text-cyan-700 border-cyan-200", icon: BookOpen },
   concept: { label: getKnowledgeGraphNodeTypeLabel("concept"), style: "bg-purple-100 text-purple-700 border-purple-200", icon: Cpu },
   skill: { label: getKnowledgeGraphNodeTypeLabel("skill"), style: "bg-green-100 text-green-700 border-green-200", icon: Wrench },
   application: { label: getKnowledgeGraphNodeTypeLabel("application"), style: "bg-orange-100 text-orange-700 border-orange-200", icon: AppWindow },
@@ -196,6 +200,11 @@ export default function NodeDetailPanel({
         {node.graphState === "needs_remediation" ? (
           <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
             Nút này đang ở trạng thái remediation. Hãy ôn lại phần yếu và vượt qua bài kiểm tra lại để xóa trạng thái này.
+          </div>
+        ) : null}
+        {node.parentNodeId ? (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            Thuoc cum cha: <span className="font-medium">{node.parentNodeId}</span>
           </div>
         ) : null}
         {qaIssues.length ? (

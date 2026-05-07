@@ -49,6 +49,8 @@ export type GraphNodeProgressState =
   | "locked"
   | "available";
 
+export type KnowledgeGraphViewMode = "overview" | "expanded";
+
 function ensureUniqueId(
   baseId: string | null | undefined,
   seenIds: Set<string>,
@@ -187,4 +189,34 @@ export function mapCourseKnowledgeGraphToFlow(
   });
 
   return { nodes, edges };
+}
+
+export function filterVisibleFlowNodes<T extends {
+  id: string;
+  data?: {
+    parentNodeId?: string;
+  };
+}>(
+  nodes: T[],
+  viewMode: KnowledgeGraphViewMode,
+  expandedClusterIds: string[],
+): T[] {
+  if (viewMode === "expanded") {
+    const expanded = new Set(expandedClusterIds);
+    return nodes.filter((node) => {
+      const parentNodeId = node.data?.parentNodeId ?? "";
+      return !parentNodeId || expanded.has(parentNodeId);
+    });
+  }
+  return nodes.filter((node) => !(node.data?.parentNodeId ?? ""));
+}
+
+export function filterVisibleFlowEdges<T extends {
+  source: string;
+  target: string;
+}>(
+  edges: T[],
+  visibleNodeIds: Set<string>,
+): T[] {
+  return edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
 }

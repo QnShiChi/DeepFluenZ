@@ -13,7 +13,12 @@ import {
   resolveKnowledgeGraphLoadState,
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
-import { mapCourseKnowledgeGraphToFlow } from "@/lib/course-knowledge-graph";
+import {
+  filterVisibleFlowEdges,
+  filterVisibleFlowNodes,
+  mapCourseKnowledgeGraphToFlow,
+  type KnowledgeGraphViewMode,
+} from "@/lib/course-knowledge-graph";
 import { KNOWLEDGE_GRAPH_COPY } from "@/lib/knowledge-graph-copy";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
 import {
@@ -42,6 +47,10 @@ import {
   readStoredKnowledgeGraphState,
   writeStoredKnowledgeGraphState,
 } from "@/lib/knowledge-graph-state";
+import {
+  applyLayoutOverrides,
+  buildClusterLayout,
+} from "@/lib/knowledge-graph-layout";
 import {
   analyzeGraphQa,
   applyGraphQaFix,
@@ -135,6 +144,9 @@ export default function KnowledgeGraphViewer({
   const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
   const [currentNodeId, setCurrentNodeId] = useState<string>("");
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
+  const [viewMode, setViewMode] = useState<KnowledgeGraphViewMode>("overview");
+  const [expandedClusterIds, setExpandedClusterIds] = useState<string[]>([]);
+  const [layoutOverrides, setLayoutOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueEntrySnapshot[]>([]);
@@ -175,6 +187,8 @@ export default function KnowledgeGraphViewer({
       description: (node.data as Record<string, unknown>).description as string || "",
       nodeType: (node.data as Record<string, unknown>).nodeType as string || "topic",
       difficulty: (node.data as Record<string, unknown>).difficulty as string || "medium",
+      parentNodeId: (node.data as Record<string, unknown>).parentNodeId as string | undefined,
+      hierarchyLevel: (node.data as Record<string, unknown>).hierarchyLevel as number | undefined,
       courseId: courseId ?? undefined,
       graphState: (node.data as Record<string, unknown>).graphState as string | undefined,
       hasUnmetPrerequisites: Boolean((node.data as Record<string, unknown>).hasUnmetPrerequisites),
@@ -210,13 +224,20 @@ export default function KnowledgeGraphViewer({
     });
   }, [nodes, selectedNode]);
 
-  const persistRuntimeState = useCallback((nextCurrentNodeId: string, nextDynamicNodes: DynamicKnowledgeGraphNode[]) => {
+  const persistRuntimeState = useCallback((
+    nextCurrentNodeId: string,
+    nextDynamicNodes: DynamicKnowledgeGraphNode[],
+    nextExpandedClusterIds: string[] = expandedClusterIds,
+    nextLayoutOverrides: Record<string, { x: number; y: number }> = layoutOverrides,
+  ) => {
     if (!courseId) return;
     writeStoredKnowledgeGraphState(courseId, {
       currentNodeId: nextCurrentNodeId,
       dynamicNodes: nextDynamicNodes,
+      expandedClusterIds: nextExpandedClusterIds,
+      layoutOverrides: nextLayoutOverrides,
     });
-  }, [courseId]);
+  }, [courseId, expandedClusterIds, layoutOverrides]);
 
   const refreshRecommendation = useCallback(async (
     targetCourseId?: string | null,
@@ -278,6 +299,25 @@ export default function KnowledgeGraphViewer({
       });
     }
   }, [courseId, dynamicNodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
+
+  const toggleCluster = useCallback((clusterId: string) => {
+    setExpandedClusterIds((prev) => {
+      const next = prev.includes(clusterId) ? prev.filter((id) => id !== clusterId) : [...prev, clusterId];
+      persistRuntimeState(currentNodeId, dynamicNodes, next, layoutOverrides);
+      return next;
+    });
+  }, [currentNodeId, dynamicNodes, layoutOverrides, persistRuntimeState]);
+
+  const handleNodeDragStop = useCallback((_event: unknown, node: Node) => {
+    setLayoutOverrides((prev) => {
+      const next = {
+        ...prev,
+        [node.id]: { x: node.position.x, y: node.position.y },
+      };
+      persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, next);
+      return next;
+    });
+  }, [currentNodeId, dynamicNodes, expandedClusterIds, persistRuntimeState]);
 
   const handleJumpToRecommended = useCallback((nodeId: string) => {
     selectNodeById(nodeId);
@@ -347,10 +387,37 @@ export default function KnowledgeGraphViewer({
       },
     );
     const styledNodes = flow.nodes.map((node) => styleNodeForProgress(node, currentProgress[node.id]));
+    const clusterPositions = expandedClusterIds.reduce<Record<string, { x: number; y: number }>>((acc, clusterId) => {
+      const parent = styledNodes.find((node) => node.id === clusterId);
+      if (!parent) return acc;
+      const childIds = styledNodes
+        .filter((node) => (node.data as Record<string, unknown>).parentNodeId === clusterId)
+        .map((node) => node.id);
+      return {
+        ...acc,
+        ...buildClusterLayout({
+          parentId: clusterId,
+          parentPosition: parent.position,
+          childIds,
+          radius: 160,
+        }),
+      };
+    }, {});
 
-    setNodes(styledNodes);
-    setEdges(flow.edges);
-  }, [activeRemediation, buildIssuesByNodeId, qaReport]);
+    const positionedNodes = styledNodes.map((node) => ({
+      ...node,
+      position: applyLayoutOverrides(
+        { [node.id]: clusterPositions[node.id] ?? node.position },
+        layoutOverrides,
+      )[node.id] ?? node.position,
+    }));
+    const visibleNodes = filterVisibleFlowNodes(positionedNodes, viewMode, expandedClusterIds);
+    const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+    const visibleEdges = filterVisibleFlowEdges(flow.edges, visibleNodeIds);
+
+    setNodes(visibleNodes);
+    setEdges(visibleEdges);
+  }, [activeRemediation, buildIssuesByNodeId, expandedClusterIds, layoutOverrides, qaReport, viewMode]);
 
   const refreshGraphQa = useCallback(async (targetCourseId: string) => {
     const report = await getGraphQaReport(targetCourseId).catch(() => null);
@@ -649,10 +716,17 @@ export default function KnowledgeGraphViewer({
         setProgressMap(mergedProgress);
         setCurrentNodeId(mergedRuntimeState.currentNodeId);
         setDynamicNodes(mergedRuntimeState.dynamicNodes);
+        setExpandedClusterIds(storedRuntimeState.expandedClusterIds);
+        setLayoutOverrides(storedRuntimeState.layoutOverrides);
         setActiveRemediation(progressSnapshot.active_remediation ?? null);
         setReviewQueue(progressSnapshot.review_queue ?? []);
         setNextStepDecision(progressSnapshot.next_step_decision ?? null);
-        persistRuntimeState(mergedRuntimeState.currentNodeId, mergedRuntimeState.dynamicNodes);
+        persistRuntimeState(
+          mergedRuntimeState.currentNodeId,
+          mergedRuntimeState.dynamicNodes,
+          storedRuntimeState.expandedClusterIds,
+          storedRuntimeState.layoutOverrides,
+        );
         setRecommendation(recommendationData);
       })
       .catch(console.error);
@@ -933,7 +1007,39 @@ export default function KnowledgeGraphViewer({
         onAction={handleTimelineAction}
         onSelectNode={selectNodeById}
       />
-      <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} fitView>
+      <div className="absolute left-4 top-4 z-10 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setViewMode("overview")}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("expanded")}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+        >
+          Expanded
+        </button>
+        {selectedNode ? (
+          <button
+            type="button"
+            onClick={() => toggleCluster(selectedNode.id)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+          >
+            {expandedClusterIds.includes(selectedNode.id) ? "Thu gon cum" : "Mo cum"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setLayoutOverrides({})}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+        >
+          Reset layout
+        </button>
+      </div>
+      <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} onNodeDragStop={handleNodeDragStop} fitView>
         <Background />
         <Controls />
       </ReactFlow>
