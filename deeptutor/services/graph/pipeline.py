@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 from json import JSONDecodeError
+import re
 
 from deeptutor.services.graph.models import CourseKnowledgeGraph, GraphAudit, ImportReport
-from deeptutor.services.graph.normalizer import normalize_syllabus_text
+from deeptutor.services.graph.normalizer import NormalizedSyllabus, normalize_syllabus_text
 from deeptutor.services.graph.prompts import build_backbone_prompt, build_enrichment_prompt
 from deeptutor.services.graph.validator import validate_course_knowledge_graph
 
 MAX_CHILD_CONCEPTS_PER_SUBTOPIC = 5
+LESSON_PATTERN = re.compile(r"^(?P<label>(?:bai|bài|chuong|chương|chapter|week)\s*\d+)\s*[:.\-)]?\s*(?P<title>.+)?$", re.IGNORECASE)
+SUBTOPIC_PATTERN = re.compile(r"^(?P<ordinal>\d+(?:\.\d+)+)\.?\s+(?P<title>.+)$")
 
 
 def _parse_llm_json(raw_text: str) -> dict:
@@ -164,6 +167,157 @@ def _prune_enriched_children(nodes: list[dict]) -> list[dict]:
     return pruned
 
 
+def _slugify_token(value: str) -> str:
+    lowered = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return lowered or "node"
+
+
+def _build_outline_backbone_from_lines(lines: list[str]) -> dict | None:
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen_node_ids: set[str] = set()
+    lesson_counter = 0
+    current_lesson_node_id = ""
+    current_lesson_title = ""
+
+    def add_node(raw_node: dict) -> str:
+        node_id = str(raw_node["node_id"])
+        if node_id in seen_node_ids:
+            suffix = 2
+            base = node_id
+            while f"{base}-{suffix}" in seen_node_ids:
+                suffix += 1
+            node_id = f"{base}-{suffix}"
+            raw_node = {**raw_node, "node_id": node_id}
+        seen_node_ids.add(node_id)
+        nodes.append(raw_node)
+        return node_id
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        lesson_match = LESSON_PATTERN.match(line)
+        if lesson_match:
+            lesson_counter += 1
+            ordinal = re.search(r"\d+", lesson_match.group("label") or "")
+            lesson_ordinal = ordinal.group(0) if ordinal else str(lesson_counter)
+            current_lesson_node_id = add_node(
+                {
+                    "node_id": f"lesson-{lesson_ordinal}",
+                    "title": line,
+                    "description": "",
+                    "node_type": "lesson",
+                    "hierarchy_level": 0,
+                    "ordinal": lesson_ordinal,
+                    "source_label": lesson_match.group("label") or f"Bai {lesson_ordinal}",
+                    "source_path": [line],
+                    "source_refs": [{"section_title": line, "snippet": line[:240]}],
+                }
+            )
+            current_lesson_title = line
+            continue
+
+        subtopic_match = SUBTOPIC_PATTERN.match(line)
+        if not subtopic_match or not current_lesson_node_id:
+            continue
+        ordinal = subtopic_match.group("ordinal")
+        subtopic_id = add_node(
+            {
+                "node_id": f"subtopic-{ordinal.replace('.', '-')}",
+                "title": line,
+                "description": subtopic_match.group("title").strip(),
+                "node_type": "subtopic",
+                "hierarchy_level": 1,
+                "parent_node_id": current_lesson_node_id,
+                "ordinal": ordinal,
+                "source_label": ordinal,
+                "source_path": [current_lesson_title, line],
+                "source_refs": [{"section_title": current_lesson_title, "snippet": line[:240]}],
+            }
+        )
+        edges.append(
+            {
+                "edge_id": f"contains-{current_lesson_node_id}-{subtopic_id}",
+                "source": current_lesson_node_id,
+                "target": subtopic_id,
+                "relation_type": "contains",
+                "confidence": 1.0,
+                "rationale": "Deterministic syllabus hierarchy fallback",
+                "source_refs": [{"section_title": current_lesson_title, "snippet": line[:240]}],
+            }
+        )
+
+    if not nodes:
+        return None
+
+    return {"nodes": nodes, "edges": edges}
+
+
+def _build_deterministic_backbone(normalized: NormalizedSyllabus) -> dict:
+    all_lines = [
+        line.strip()
+        for section in normalized.sections
+        for line in [section.title, *section.body.splitlines()]
+        if line.strip()
+    ]
+
+    outline_backbone = _build_outline_backbone_from_lines(all_lines)
+    if outline_backbone is not None:
+        return outline_backbone
+
+    nodes: list[dict] = []
+    seen_node_ids: set[str] = set()
+
+    def add_node(raw_node: dict) -> str:
+        node_id = str(raw_node["node_id"])
+        if node_id in seen_node_ids:
+            suffix = 2
+            base = node_id
+            while f"{base}-{suffix}" in seen_node_ids:
+                suffix += 1
+            node_id = f"{base}-{suffix}"
+            raw_node = {**raw_node, "node_id": node_id}
+        seen_node_ids.add(node_id)
+        nodes.append(raw_node)
+        return node_id
+
+    for index, section in enumerate(normalized.sections, start=1):
+        section_title = section.title.strip()
+        add_node(
+            {
+                "node_id": f"topic-{_slugify_token(section_title)}",
+                "title": section_title,
+                "description": section.body.strip(),
+                "node_type": "topic",
+                "hierarchy_level": 0,
+                "ordinal": str(index),
+                "source_label": section_title,
+                "source_path": [section_title],
+                "source_refs": [{"section_title": section_title, "snippet": section.body[:240]}],
+            }
+        )
+
+    if not nodes:
+        fallback_title = normalized.sections[0].title if normalized.sections else "Course overview"
+        nodes.append(
+            {
+                "node_id": "topic-overview",
+                "title": fallback_title,
+                "description": normalized.sections[0].body if normalized.sections else "",
+                "node_type": "topic",
+                "hierarchy_level": 0,
+                "ordinal": "1",
+                "source_label": fallback_title,
+                "source_path": [fallback_title],
+                "source_refs": [{"section_title": fallback_title, "snippet": ""}],
+            }
+        )
+
+    return {"nodes": nodes, "edges": []}
+
+
 def merge_course_graph_layers(backbone_data: dict, enrichment_data: dict) -> CourseKnowledgeGraph:
     backbone = _sanitize_graph_fragment(
         backbone_data,
@@ -224,16 +378,33 @@ async def build_course_knowledge_graph(
     llm,
 ) -> CourseKnowledgeGraph:
     normalized = normalize_syllabus_text(source_text)
+    warnings: list[str] = []
 
-    backbone_raw = await llm.complete(build_backbone_prompt(normalized.model_dump_json()))
-    backbone_data = _sanitize_graph_fragment(
-        _parse_llm_json(backbone_raw),
-        default_node_type="topic",
-        default_relation_type="prerequisite",
-        default_confidence=1.0,
-        node_id_prefix="backbone-node",
-        edge_id_prefix="backbone-edge",
-    )
+    llm_kwargs = {"response_format": {"type": "json_object"}}
+
+    try:
+        backbone_raw = await llm.complete(
+            build_backbone_prompt(normalized.model_dump_json()),
+            **llm_kwargs,
+        )
+        backbone_data = _sanitize_graph_fragment(
+            _parse_llm_json(backbone_raw),
+            default_node_type="topic",
+            default_relation_type="prerequisite",
+            default_confidence=1.0,
+            node_id_prefix="backbone-node",
+            edge_id_prefix="backbone-edge",
+        )
+    except JSONDecodeError:
+        backbone_data = _sanitize_graph_fragment(
+            _build_deterministic_backbone(normalized),
+            default_node_type="topic",
+            default_relation_type="contains",
+            default_confidence=1.0,
+            node_id_prefix="backbone-node",
+            edge_id_prefix="backbone-edge",
+        )
+        warnings.append("Backbone stage failed; rebuilt graph from deterministic syllabus structure.")
 
     backbone_edges = backbone_data.get("edges", [])
     payload = {
@@ -249,7 +420,7 @@ async def build_course_knowledge_graph(
             enriched_node_ids=[],
             backbone_edge_ids=[edge["edge_id"] for edge in backbone_edges],
             enriched_edge_ids=[],
-            warnings=[],
+            warnings=warnings,
         ).model_dump(),
         "import_report": ImportReport(
             status="backbone_only",
@@ -262,7 +433,10 @@ async def build_course_knowledge_graph(
     }
 
     try:
-        enrichment_raw = await llm.complete(build_enrichment_prompt(json.dumps(payload)))
+        enrichment_raw = await llm.complete(
+            build_enrichment_prompt(json.dumps(payload)),
+            **llm_kwargs,
+        )
         enrichment = _sanitize_graph_fragment(
             _parse_llm_json(enrichment_raw),
             default_node_type="concept",

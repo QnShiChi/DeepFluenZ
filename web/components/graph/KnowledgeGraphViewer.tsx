@@ -160,6 +160,19 @@ export default function KnowledgeGraphViewer({
   const [timelineRequestKey, setTimelineRequestKey] = useState(0);
   const [timelineFocusedNodeId, setTimelineFocusedNodeId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const courseIdRef = useRef<string | null>(courseId);
+  const currentNodeIdRef = useRef(currentNodeId);
+  const dynamicNodesRef = useRef<DynamicKnowledgeGraphNode[]>(dynamicNodes);
+  const expandedClusterIdsRef = useRef<string[]>(expandedClusterIds);
+  const layoutOverridesRef = useRef<Record<string, { x: number; y: number }>>(layoutOverrides);
+  const wsClientRef = useRef<UnifiedWSClient | null>(null);
+  const wsSubscribeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  courseIdRef.current = courseId;
+  currentNodeIdRef.current = currentNodeId;
+  dynamicNodesRef.current = dynamicNodes;
+  expandedClusterIdsRef.current = expandedClusterIds;
+  layoutOverridesRef.current = layoutOverrides;
 
   const resolveNodeSuggestedFixes = useCallback((nodeId: string): GraphQaSuggestedFix[] => (
     (qaReport?.suggested_fixes ?? []).filter((fix) => {
@@ -227,8 +240,8 @@ export default function KnowledgeGraphViewer({
   const persistRuntimeState = useCallback((
     nextCurrentNodeId: string,
     nextDynamicNodes: DynamicKnowledgeGraphNode[],
-    nextExpandedClusterIds: string[] = expandedClusterIds,
-    nextLayoutOverrides: Record<string, { x: number; y: number }> = layoutOverrides,
+    nextExpandedClusterIds: string[],
+    nextLayoutOverrides: Record<string, { x: number; y: number }>,
   ) => {
     if (!courseId) return;
     writeStoredKnowledgeGraphState(courseId, {
@@ -237,7 +250,7 @@ export default function KnowledgeGraphViewer({
       expandedClusterIds: nextExpandedClusterIds,
       layoutOverrides: nextLayoutOverrides,
     });
-  }, [courseId, expandedClusterIds, layoutOverrides]);
+  }, [courseId]);
 
   const refreshRecommendation = useCallback(async (
     targetCourseId?: string | null,
@@ -284,13 +297,13 @@ export default function KnowledgeGraphViewer({
     if (!target) return;
     selectNode(target);
     setCurrentNodeId(nodeId);
-    persistRuntimeState(nodeId, dynamicNodes);
-  }, [dynamicNodes, nodes, persistRuntimeState, selectNode]);
+    persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
+  }, [dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, selectNode]);
 
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     selectNode(node);
     setCurrentNodeId(node.id);
-    persistRuntimeState(node.id, dynamicNodes);
+    persistRuntimeState(node.id, dynamicNodes, expandedClusterIds, layoutOverrides);
     if (sessionId && courseId) {
       void setCurrentGraphNode(sessionId, courseId, node.id).then((ok) => {
         if (ok) {
@@ -298,7 +311,7 @@ export default function KnowledgeGraphViewer({
         }
       });
     }
-  }, [courseId, dynamicNodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
+  }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
 
   const toggleCluster = useCallback((clusterId: string) => {
     setExpandedClusterIds((prev) => {
@@ -560,10 +573,10 @@ export default function KnowledgeGraphViewer({
     if (!target) return;
     const nodeData = buildSelectedNodeData(target);
     setCurrentNodeId(nodeId);
-    persistRuntimeState(nodeId, dynamicNodes);
+    persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
     updateNodeProgress(nodeId, "explored");
     onQuizNode?.(nodeData);
-  }, [buildSelectedNodeData, dynamicNodes, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
+  }, [buildSelectedNodeData, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
 
   const handleTimelineAction = useCallback((action: GraphTimelineAction, event: GraphTimelineEvent) => {
     const nodeId = String(action.payload?.node_id ?? event.node_id ?? "");
@@ -818,38 +831,50 @@ export default function KnowledgeGraphViewer({
 
   useEffect(() => {
     if (!sessionId) return;
-    
-    let isConnected = true;
+
+    let isActive = true;
     const client = new UnifiedWSClient((event: StreamEvent) => {
-      // The push_custom_event emits a RESULT event with event_type = "graph_updated"
       if (event.type === "result" && event.metadata?.event_type === "graph_updated") {
         const state = event.metadata.state as GraphStatePayload;
         if (!state) return;
 
-        const nextCurrentNodeId = state.current_node_id || currentNodeId;
+        const nextCurrentNodeId = state.current_node_id || currentNodeIdRef.current;
+        const nextDynamicNodes = state.dynamic_nodes ?? [];
         setCurrentNodeId(nextCurrentNodeId);
-        setDynamicNodes(state.dynamic_nodes ?? []);
-        persistRuntimeState(nextCurrentNodeId, state.dynamic_nodes ?? []);
-        if (courseId) {
-          void refreshRecommendation(courseId);
+        setDynamicNodes(nextDynamicNodes);
+        persistRuntimeState(
+          nextCurrentNodeId,
+          nextDynamicNodes,
+          expandedClusterIdsRef.current,
+          layoutOverridesRef.current,
+        );
+        if (courseIdRef.current) {
+          void refreshRecommendation(courseIdRef.current);
         }
       }
     });
 
+    wsClientRef.current = client;
     client.connect();
 
-    // Small delay to ensure WS is open before subscribing
-    setTimeout(() => {
-      if (isConnected && client.connected) {
+    wsSubscribeTimerRef.current = setTimeout(() => {
+      if (isActive && client.connected) {
         client.send({ type: "subscribe_session", session_id: sessionId });
       }
     }, 500);
 
     return () => {
-      isConnected = false;
+      isActive = false;
+      if (wsSubscribeTimerRef.current) {
+        clearTimeout(wsSubscribeTimerRef.current);
+        wsSubscribeTimerRef.current = null;
+      }
+      if (wsClientRef.current === client) {
+        wsClientRef.current = null;
+      }
       client.disconnect();
     };
-  }, [courseId, currentNodeId, persistRuntimeState, refreshRecommendation, sessionId]);
+  }, [persistRuntimeState, refreshRecommendation, sessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !sessionId || !courseId) return;
@@ -872,6 +897,8 @@ export default function KnowledgeGraphViewer({
         persistRuntimeState(
           progressSnapshot.current_node_id || detail.node_id || "",
           progressSnapshot.dynamic_nodes ?? [],
+          expandedClusterIds,
+          layoutOverrides,
         );
       });
       void refreshRecommendation(courseId);
@@ -902,6 +929,8 @@ export default function KnowledgeGraphViewer({
     };
   }, [
     courseId,
+    expandedClusterIds,
+    layoutOverrides,
     openTimeline,
     persistRuntimeState,
     refreshRecommendation,
@@ -1067,14 +1096,14 @@ export default function KnowledgeGraphViewer({
         onAskAbout={(n) => {
           setSelectedNode(null);
           setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes);
+          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
           updateNodeProgress(n.id, "explored");
           onAskAbout?.(n);
         }}
         onQuizNode={(n) => {
           setSelectedNode(null);
           setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes);
+          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
           updateNodeProgress(n.id, "explored");
           onQuizNode?.(n);
         }}

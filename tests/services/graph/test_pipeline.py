@@ -24,7 +24,17 @@ class StubLlm:
     def __init__(self, responses: list[str]) -> None:
         self._responses = responses
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str, **_: object) -> str:
+        return self._responses.pop(0)
+
+
+class RecordingStubLlm:
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = responses
+        self.calls: list[dict[str, object]] = []
+
+    async def complete(self, prompt: str, **kwargs: object) -> str:
+        self.calls.append({"prompt": prompt, **kwargs})
         return self._responses.pop(0)
 
 
@@ -66,6 +76,83 @@ async def test_build_course_knowledge_graph_falls_back_to_backbone_only() -> Non
     assert graph.import_report is not None
     assert graph.import_report.status == "backbone_only"
     assert graph.audit.warnings == ["Enrichment stage failed; saved backbone-only graph."]
+
+
+@pytest.mark.anyio
+async def test_build_course_knowledge_graph_falls_back_to_deterministic_backbone_when_backbone_json_is_invalid() -> None:
+    llm = StubLlm(
+        [
+            "not-json",
+            "{}",
+        ]
+    )
+
+    graph = await build_course_knowledge_graph(
+        source_type="syllabus_pdf",
+        course_id="oop-java",
+        title="OOP Java",
+        source_text="""
+        BAI 1 Gioi thieu ve OOP
+        1.1 Mot so khai niem
+        1.2 Ngon ngu ho tro lap trinh huong doi tuong
+
+        BAI 2 Gioi thieu ve Java
+        2.1 Moi truong Java
+        2.2 Cau truc chuong trinh Java
+        """.strip(),
+        llm=llm,
+    )
+
+    lesson_titles = [node.title for node in graph.nodes if node.node_type == "lesson"]
+    subtopic_ordinals = [node.ordinal for node in graph.nodes if node.node_type == "subtopic"]
+
+    assert lesson_titles == ["BAI 1 Gioi thieu ve OOP", "BAI 2 Gioi thieu ve Java"]
+    assert subtopic_ordinals == ["1.1", "1.2", "2.1", "2.2"]
+    assert any(edge.relation_type == "contains" for edge in graph.edges)
+    assert "Backbone stage failed; rebuilt graph from deterministic syllabus structure." in graph.audit.warnings
+
+
+@pytest.mark.anyio
+async def test_build_course_knowledge_graph_deterministic_backbone_ignores_pdf_header_noise_and_keeps_lessons() -> None:
+    llm = StubLlm(
+        [
+            "not-json",
+            "{}",
+        ]
+    )
+
+    graph = await build_course_knowledge_graph(
+        source_type="syllabus_pdf",
+        course_id="oop-java",
+        title="OOP Java",
+        source_text=(
+            "BM03/QT2b/DBCL\n"
+            "TRUONG DAI HOC CONG NGHE TP.HCM\n"
+            "CUONG CHI TIET HOC PHAN\n"
+            "BAI 1 Gioi thieu ve OOP\n"
+            "1.1 Mot so khai niem\n"
+            "1.2 Ngon ngu ho tro lap trinh huong doi tuong\n"
+            "BAI 2 Cac khai niem co so cua OOP\n"
+            "2.1 Kieu du lieu truu tuong\n"
+            "2.2 Lop - the hien - bien doi tuong - thong diep\n"
+        ),
+        llm=llm,
+    )
+
+    top_level_titles = [node.title for node in graph.nodes if node.hierarchy_level == 0]
+    subtopic_titles = [node.title for node in graph.nodes if node.node_type == "subtopic"]
+
+    assert "BM03/QT2b/DBCL" not in top_level_titles
+    assert top_level_titles == [
+        "BAI 1 Gioi thieu ve OOP",
+        "BAI 2 Cac khai niem co so cua OOP",
+    ]
+    assert subtopic_titles == [
+        "1.1 Mot so khai niem",
+        "1.2 Ngon ngu ho tro lap trinh huong doi tuong",
+        "2.1 Kieu du lieu truu tuong",
+        "2.2 Lop - the hien - bien doi tuong - thong diep",
+    ]
 
 
 @pytest.mark.anyio
@@ -230,3 +317,41 @@ async def test_build_course_knowledge_graph_normalizes_difficulty_labels() -> No
 
     assert graph.nodes[0].difficulty == "hard"
     assert graph.nodes[1].difficulty == "easy"
+
+
+@pytest.mark.anyio
+async def test_build_course_knowledge_graph_requests_json_mode_for_llm_calls() -> None:
+    llm = RecordingStubLlm(
+        [
+            """
+            {
+              "nodes": [
+                {
+                  "node_id": "lesson-1",
+                  "title": "Bai 1",
+                  "node_type": "lesson"
+                }
+              ],
+              "edges": []
+            }
+            """,
+            """
+            {
+              "nodes": [],
+              "edges": []
+            }
+            """,
+        ]
+    )
+
+    await build_course_knowledge_graph(
+        source_type="syllabus_text",
+        course_id="oop-java",
+        title="OOP Java",
+        source_text="Bai 1: Gioi thieu ve OOP",
+        llm=llm,
+    )
+
+    assert len(llm.calls) == 2
+    assert llm.calls[0]["response_format"] == {"type": "json_object"}
+    assert llm.calls[1]["response_format"] == {"type": "json_object"}
