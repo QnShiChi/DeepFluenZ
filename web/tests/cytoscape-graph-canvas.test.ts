@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   createCytoscapeInteractionOptions,
   createCytoscapeStylesheet,
 } from "../lib/cytoscape-graph-styles.ts";
+
+const source = readFileSync(
+  new URL("../components/graph/CytoscapeGraphCanvas.tsx", import.meta.url),
+  "utf8",
+);
 
 test("createCytoscapeStylesheet differentiates prerequisite and contains edges", () => {
   const stylesheet = createCytoscapeStylesheet();
@@ -41,4 +47,11 @@ test("createCytoscapeInteractionOptions explicitly enables zoom and useful viewp
   assert.equal(options.userPanningEnabled, true);
   assert.ok((options.maxZoom ?? 0) >= 2);
   assert.ok((options.minZoom ?? 1) <= 0.4);
+});
+
+test("CytoscapeGraphCanvas tracks zoom tiers and uses animated focus fitting", () => {
+  assert.match(source, /cy\.on\("zoom"/);
+  assert.match(source, /resolveZoomTier/);
+  assert.match(source, /cy\.animate\(\{/);
+  assert.match(source, /focusNodeId/);
 });

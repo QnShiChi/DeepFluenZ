@@ -8,7 +8,10 @@ import type {
   CytoscapeNodeElement,
 } from "../../lib/cytoscape-knowledge-graph.ts";
 import type { CytoscapeGraphPoint } from "../../lib/cytoscape-knowledge-graph-layout.ts";
-import { createCytoscapeStylesheet } from "../../lib/cytoscape-graph-styles.ts";
+import {
+  createCytoscapeInteractionOptions,
+  createCytoscapeStylesheet,
+} from "../../lib/cytoscape-graph-styles.ts";
 
 export interface CytoscapeGraphCanvasProps {
   nodes: CytoscapeNodeElement[];
@@ -17,6 +20,15 @@ export interface CytoscapeGraphCanvasProps {
   className?: string;
   onNodeClick?: (nodeId: string) => void;
   onNodeDragStop?: (nodeId: string, position: CytoscapeGraphPoint) => void;
+  onZoomTierChange?: (tier: "far" | "mid" | "near") => void;
+  focusNodeId?: string | null;
+  fitViewportVersion?: number;
+}
+
+function resolveZoomTier(zoom: number): "far" | "mid" | "near" {
+  if (zoom < 0.58) return "far";
+  if (zoom < 1.05) return "mid";
+  return "near";
 }
 
 function toElementDefinitions(
@@ -51,11 +63,17 @@ export default function CytoscapeGraphCanvas({
   className,
   onNodeClick,
   onNodeDragStop,
+  onZoomTierChange,
+  focusNodeId,
+  fitViewportVersion = 0,
 }: CytoscapeGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const clickHandlerRef = useRef(onNodeClick);
   const dragHandlerRef = useRef(onNodeDragStop);
+  const zoomTierHandlerRef = useRef(onZoomTierChange);
+  const hasAutoFitRef = useRef(false);
+  const lastFitViewportVersionRef = useRef<number | null>(null);
   const elements = useMemo(
     () => toElementDefinitions(nodes, edges, positions),
     [nodes, edges, positions],
@@ -63,6 +81,7 @@ export default function CytoscapeGraphCanvas({
 
   clickHandlerRef.current = onNodeClick;
   dragHandlerRef.current = onNodeDragStop;
+  zoomTierHandlerRef.current = onZoomTierChange;
 
   useEffect(() => {
     if (!containerRef.current || cyRef.current) {
@@ -74,7 +93,7 @@ export default function CytoscapeGraphCanvas({
       elements,
       style: createCytoscapeStylesheet(),
       layout: { name: "preset" },
-      wheelSensitivity: 0.18,
+      ...createCytoscapeInteractionOptions(),
     });
 
     cy.on("tap", "node", (event) => {
@@ -91,9 +110,15 @@ export default function CytoscapeGraphCanvas({
       });
     });
 
+    cy.on("zoom", () => {
+      zoomTierHandlerRef.current?.(resolveZoomTier(cy.zoom()));
+    });
+
     cyRef.current = cy;
 
     return () => {
+      hasAutoFitRef.current = false;
+      lastFitViewportVersionRef.current = null;
       cy.destroy();
       cyRef.current = null;
     };
@@ -113,8 +138,47 @@ export default function CytoscapeGraphCanvas({
         node.position(position);
       }
     });
-    cy.fit(cy.elements(), 48);
   }, [elements, positions]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !elements.length) {
+      return;
+    }
+
+    if (!hasAutoFitRef.current) {
+      cy.fit(cy.elements(), 132);
+      hasAutoFitRef.current = true;
+      lastFitViewportVersionRef.current = fitViewportVersion;
+      zoomTierHandlerRef.current?.(resolveZoomTier(cy.zoom()));
+      return;
+    }
+
+    if (lastFitViewportVersionRef.current !== fitViewportVersion) {
+      cy.fit(cy.elements(), 132);
+      lastFitViewportVersionRef.current = fitViewportVersion;
+      zoomTierHandlerRef.current?.(resolveZoomTier(cy.zoom()));
+    }
+  }, [elements.length, fitViewportVersion]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !focusNodeId) {
+      return;
+    }
+
+    const focusNode = cy.getElementById(focusNodeId);
+    if (!focusNode.length) {
+      return;
+    }
+
+    cy.animate({
+      center: { eles: focusNode },
+      zoom: Math.max(cy.zoom(), 0.82),
+    }, {
+      duration: 220,
+    });
+  }, [focusNodeId]);
 
   return React.createElement("div", {
     ref: containerRef,
