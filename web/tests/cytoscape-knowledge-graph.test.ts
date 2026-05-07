@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mapCourseKnowledgeGraphToCytoscape } from "../lib/cytoscape-knowledge-graph.ts";
+import {
+  buildFocusedCytoscapeSubgraph,
+  mapCourseKnowledgeGraphToCytoscape,
+} from "../lib/cytoscape-knowledge-graph.ts";
 
 test("mapCourseKnowledgeGraphToCytoscape emits semantic lesson and subtopic nodes", () => {
   const result = mapCourseKnowledgeGraphToCytoscape(
@@ -166,4 +169,30 @@ test("mapCourseKnowledgeGraphToCytoscape hides non-contextual child labels at fa
   const child = result.nodes.find((node) => node.data.id === "subtopic-1-1");
   assert.equal(child?.data.labelDensityMode, "hidden");
   assert.equal(child?.classes.includes("label-density-hidden"), true);
+});
+
+test("buildFocusedCytoscapeSubgraph keeps the selected cluster and its local relations", () => {
+  const focused = buildFocusedCytoscapeSubgraph(
+    {
+      nodes: [
+        { data: { id: "lesson-2", parentId: "", hierarchyLevel: 0 } },
+        { data: { id: "subtopic-2-1", parentId: "lesson-2", hierarchyLevel: 1 } },
+        { data: { id: "lesson-3", parentId: "", hierarchyLevel: 0 } },
+      ],
+      edges: [
+        {
+          data: {
+            id: "contains-2-1",
+            source: "lesson-2",
+            target: "subtopic-2-1",
+            relationType: "contains",
+          },
+        },
+      ],
+    } as any,
+    "lesson-2",
+  );
+
+  assert.deepEqual(focused.nodes.map((node) => node.data.id), ["lesson-2", "subtopic-2-1"]);
+  assert.deepEqual(focused.edges.map((edge) => edge.data.id), ["contains-2-1"]);
 });

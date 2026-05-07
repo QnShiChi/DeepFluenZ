@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildBackboneRadialLayout,
   buildExpandedClusterLayout,
+  buildFocusInsetLayout,
 } from "../lib/cytoscape-knowledge-graph-layout.ts";
 
 test("buildBackboneRadialLayout spreads lesson nodes instead of keeping one x-column", () => {
@@ -56,4 +57,12 @@ test("buildBackboneRadialLayout keeps large backbone graphs within a readable ou
   );
 
   assert.ok(maxDistance <= 640);
+});
+
+test("buildFocusInsetLayout gives the cluster hub centered space and readable child radius", () => {
+  const positions = buildFocusInsetLayout("lesson-2", ["subtopic-2-1", "subtopic-2-2", "subtopic-2-3"]);
+
+  assert.deepEqual(positions["lesson-2"], { x: 280, y: 220 });
+  assert.ok(positions["subtopic-2-1"].x !== 280 || positions["subtopic-2-1"].y !== 220);
+  assert.ok(Math.abs(positions["subtopic-2-1"].x - 280) >= 150);
 });
