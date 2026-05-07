@@ -136,6 +136,11 @@ export default function KnowledgeGraphViewer({
     expandedClusterIds: [] as string[],
     layoutOverrides: {} as Record<string, { x: number; y: number }>,
   });
+  const courseIdRef = useRef<string | null>(courseId);
+  const wsClientRef = useRef<UnifiedWSClient | null>(null);
+  const wsSubscribeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  courseIdRef.current = courseId;
 
   const resolveNodeSuggestedFixes = useCallback((nodeId: string): GraphQaSuggestedFix[] => (
     (qaReport?.suggested_fixes ?? []).filter((fix) => {
@@ -283,6 +288,7 @@ export default function KnowledgeGraphViewer({
         }
       });
     }
+  }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
   }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
 
   const toggleCluster = useCallback((clusterId: string) => {
@@ -835,7 +841,7 @@ export default function KnowledgeGraphViewer({
   useEffect(() => {
     if (!sessionId) return;
 
-    let isConnected = true;
+    let isActive = true;
     const client = new UnifiedWSClient((event: StreamEvent) => {
       if (event.type === "result" && event.metadata?.event_type === "graph_updated") {
         const state = event.metadata.state as GraphStatePayload;
@@ -851,26 +857,33 @@ export default function KnowledgeGraphViewer({
           runtimeStateRef.current.expandedClusterIds,
           runtimeStateRef.current.layoutOverrides,
         );
-        if (courseId) {
-          void refreshRecommendation(courseId);
+        if (courseIdRef.current) {
+          void refreshRecommendation(courseIdRef.current);
         }
       }
     });
 
+    wsClientRef.current = client;
     client.connect();
 
-    const subscribeTimer = window.setTimeout(() => {
-      if (isConnected && client.connected) {
+    wsSubscribeTimerRef.current = setTimeout(() => {
+      if (isActive && client.connected) {
         client.send({ type: "subscribe_session", session_id: sessionId });
       }
     }, 500);
 
     return () => {
-      isConnected = false;
-      window.clearTimeout(subscribeTimer);
+      isActive = false;
+      if (wsSubscribeTimerRef.current) {
+        clearTimeout(wsSubscribeTimerRef.current);
+        wsSubscribeTimerRef.current = null;
+      }
+      if (wsClientRef.current === client) {
+        wsClientRef.current = null;
+      }
       client.disconnect();
     };
-  }, [courseId, persistRuntimeState, refreshRecommendation, sessionId]);
+  }, [persistRuntimeState, refreshRecommendation, sessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !sessionId || !courseId) return;
@@ -925,6 +938,8 @@ export default function KnowledgeGraphViewer({
     };
   }, [
     courseId,
+    expandedClusterIds,
+    layoutOverrides,
     openTimeline,
     persistRuntimeState,
     refreshRecommendation,
