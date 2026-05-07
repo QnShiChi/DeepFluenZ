@@ -9,11 +9,14 @@ export interface CytoscapeNodeElement {
   data: {
     id: string;
     label: string;
+    description: string;
+    difficulty: string;
     kind: string;
     parentId: string;
     hierarchyLevel: number;
     ordinal: string;
     graphState: GraphNodeProgressState;
+    hasUnmetPrerequisites: boolean;
     issueSeverity: CourseKnowledgeGraphNodeIssue["severity"] | null;
     issueCount: number;
     isExpanded: boolean;
@@ -100,16 +103,19 @@ export function mapCourseKnowledgeGraphToCytoscape(
                 : "available";
 
     return {
-      data: {
-        id,
-        label: node.title,
-        kind: node.node_type,
-        parentId,
-        hierarchyLevel: node.hierarchy_level ?? 0,
-        ordinal: node.ordinal ?? "",
-        graphState,
-        issueSeverity,
-        issueCount: issueList.length,
+        data: {
+          id,
+          label: node.title,
+          description: node.description ?? "",
+          difficulty: node.difficulty ?? "medium",
+          kind: node.node_type,
+          parentId,
+          hierarchyLevel: node.hierarchy_level ?? 0,
+          ordinal: node.ordinal ?? "",
+          graphState,
+          hasUnmetPrerequisites,
+          issueSeverity,
+          issueCount: issueList.length,
         isExpanded: expandedIds.has(id),
         isRecommended: recommendedNodeId === id,
         isCurrent: currentNodeId === id,

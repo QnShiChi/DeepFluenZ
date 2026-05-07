@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { ReactFlow, Background, Controls, Node, Edge } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import NodeDetailPanel, { type SelectedNodeData } from "./NodeDetailPanel";
 import GraphHealthPanel from "./GraphHealthPanel";
 import LearningTimelineDrawer from "./LearningTimelineDrawer";
+import CytoscapeGraphCanvas from "./CytoscapeGraphCanvas";
 import { UnifiedWSClient, StreamEvent } from "@/lib/unified-ws";
 import { apiUrl } from "@/lib/api";
 import { getSession } from "@/lib/session-api";
@@ -14,11 +13,13 @@ import {
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
 import {
-  filterVisibleFlowEdges,
-  filterVisibleFlowNodes,
-  mapCourseKnowledgeGraphToFlow,
   type KnowledgeGraphViewMode,
 } from "@/lib/course-knowledge-graph";
+import {
+  mapCourseKnowledgeGraphToCytoscape,
+  type CytoscapeEdgeElement,
+  type CytoscapeNodeElement,
+} from "@/lib/cytoscape-knowledge-graph";
 import { KNOWLEDGE_GRAPH_COPY } from "@/lib/knowledge-graph-copy";
 import { describeCourseTemplateImport } from "@/lib/course-template-import-feedback";
 import {
@@ -48,9 +49,12 @@ import {
   writeStoredKnowledgeGraphState,
 } from "@/lib/knowledge-graph-state";
 import {
-  applyLayoutOverrides,
-  buildClusterLayout,
-} from "@/lib/knowledge-graph-layout";
+  applyCytoscapeLayoutOverrides,
+  buildBackboneRadialLayout,
+  buildExpandedClusterLayout,
+  type CytoscapeGraphPoint,
+  filterVisibleCytoscapeNodeIds,
+} from "@/lib/cytoscape-knowledge-graph-layout";
 import {
   analyzeGraphQa,
   applyGraphQaFix,
@@ -74,58 +78,24 @@ import { describeNextStepDecision } from "@/lib/next-step-tutor-ui";
 
 type IssuesByNodeId = Record<string, Array<{ severity: "critical" | "high" | "medium" | "low"; kind: string }>>;
 
-const DEFAULT_NODES: Node[] = [
-  { id: "1", position: { x: 250, y: 50 }, data: { label: "Chapter 1: Intro" }, type: "default" },
-  { id: "2", position: { x: 250, y: 200 }, data: { label: "Chapter 2: Vars" }, type: "default" },
-];
+type RenderedGraphNode = CytoscapeNodeElement & {
+  id: string;
+  position: CytoscapeGraphPoint;
+};
 
-const DEFAULT_EDGES: Edge[] = [
-  { id: "e1-2", source: "1", target: "2" },
-];
+type RenderedGraphEdge = CytoscapeEdgeElement & {
+  id: string;
+  source: string;
+  target: string;
+};
+
+const DEFAULT_NODES: RenderedGraphNode[] = [];
+const DEFAULT_EDGES: RenderedGraphEdge[] = [];
 
 interface GraphStatePayload {
   current_node_id: string;
   mastered_nodes: string[];
   dynamic_nodes: DynamicKnowledgeGraphNode[];
-}
-
-function styleNodeForProgress(node: Node, status?: NodeStatus): Node {
-  const graphState = (node.data as Record<string, unknown>).graphState as string | undefined;
-
-  if (graphState === "locked") {
-    return node;
-  }
-  if (graphState === "in_progress") {
-    return {
-      ...node,
-      style: {
-        ...node.style,
-        border: "2px solid #0ea5e9",
-        boxShadow: "0 0 0 4px rgba(14, 165, 233, 0.14)",
-      },
-    };
-  }
-  if (status === "mastered") {
-    return {
-      ...node,
-      style: {
-        ...node.style,
-        border: "2px solid #22c55e",
-        boxShadow: "0 0 10px rgba(34, 197, 94, 0.2)",
-      },
-    };
-  }
-  if (status === "explored") {
-    return {
-      ...node,
-      style: {
-        ...node.style,
-        border: "2px solid #f59e0b",
-        boxShadow: node.style?.boxShadow ?? "none",
-      },
-    };
-  }
-  return node;
 }
 
 export default function KnowledgeGraphViewer({
@@ -137,8 +107,8 @@ export default function KnowledgeGraphViewer({
   onAskAbout?: (node: SelectedNodeData) => void;
   onQuizNode?: (node: SelectedNodeData) => void;
 }) {
-  const [nodes, setNodes] = useState<Node[]>(DEFAULT_NODES);
-  const [edges, setEdges] = useState<Edge[]>(DEFAULT_EDGES);
+  const [nodes, setNodes] = useState<RenderedGraphNode[]>(DEFAULT_NODES);
+  const [edges, setEdges] = useState<RenderedGraphEdge[]>(DEFAULT_EDGES);
   const [graphTemplate, setGraphTemplate] = useState<{ nodes?: any[]; edges?: any[]; [key: string]: unknown } | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Record<string, NodeStatus>>({});
@@ -160,6 +130,12 @@ export default function KnowledgeGraphViewer({
   const [timelineRequestKey, setTimelineRequestKey] = useState(0);
   const [timelineFocusedNodeId, setTimelineFocusedNodeId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const runtimeStateRef = useRef({
+    currentNodeId: "",
+    dynamicNodes: [] as DynamicKnowledgeGraphNode[],
+    expandedClusterIds: [] as string[],
+    layoutOverrides: {} as Record<string, { x: number; y: number }>,
+  });
 
   const resolveNodeSuggestedFixes = useCallback((nodeId: string): GraphQaSuggestedFix[] => (
     (qaReport?.suggested_fixes ?? []).filter((fix) => {
@@ -181,22 +157,22 @@ export default function KnowledgeGraphViewer({
     return issuesByNodeId;
   }, []);
 
-  const buildSelectedNodeData = useCallback((node: Node): SelectedNodeData => ({
+  const buildSelectedNodeData = useCallback((node: RenderedGraphNode): SelectedNodeData => ({
       id: node.id,
-      title: (node.data as Record<string, unknown>).label as string || node.id,
-      description: (node.data as Record<string, unknown>).description as string || "",
-      nodeType: (node.data as Record<string, unknown>).nodeType as string || "topic",
-      difficulty: (node.data as Record<string, unknown>).difficulty as string || "medium",
-      parentNodeId: (node.data as Record<string, unknown>).parentNodeId as string | undefined,
-      hierarchyLevel: (node.data as Record<string, unknown>).hierarchyLevel as number | undefined,
+      title: node.data.label || node.id,
+      description: node.data.description || "",
+      nodeType: node.data.kind || "topic",
+      difficulty: node.data.difficulty || "medium",
+      parentNodeId: node.data.parentId || undefined,
+      hierarchyLevel: node.data.hierarchyLevel,
       courseId: courseId ?? undefined,
-      graphState: (node.data as Record<string, unknown>).graphState as string | undefined,
-      hasUnmetPrerequisites: Boolean((node.data as Record<string, unknown>).hasUnmetPrerequisites),
+      graphState: node.data.graphState,
+      hasUnmetPrerequisites: Boolean(node.data.hasUnmetPrerequisites),
       qaIssues: qaReport?.issues.filter((issue) => issue.affected_node_ids.includes(node.id)) ?? [],
       qaSuggestedFixes: resolveNodeSuggestedFixes(node.id),
   }), [courseId, qaReport, resolveNodeSuggestedFixes]);
 
-  const selectNode = useCallback((node: Node) => {
+  const selectNode = useCallback((node: RenderedGraphNode) => {
     setSelectedNode(buildSelectedNodeData(node));
   }, [buildSelectedNodeData]);
 
@@ -206,10 +182,8 @@ export default function KnowledgeGraphViewer({
     if (!nextNode) return;
     setSelectedNode((prev) => {
       if (!prev) return prev;
-      const nextGraphState = (nextNode.data as Record<string, unknown>).graphState as string | undefined;
-      const nextHasUnmetPrerequisites = Boolean(
-        (nextNode.data as Record<string, unknown>).hasUnmetPrerequisites,
-      );
+      const nextGraphState = nextNode.data.graphState;
+      const nextHasUnmetPrerequisites = Boolean(nextNode.data.hasUnmetPrerequisites);
       if (
         prev.graphState === nextGraphState &&
         prev.hasUnmetPrerequisites === nextHasUnmetPrerequisites
@@ -227,8 +201,8 @@ export default function KnowledgeGraphViewer({
   const persistRuntimeState = useCallback((
     nextCurrentNodeId: string,
     nextDynamicNodes: DynamicKnowledgeGraphNode[],
-    nextExpandedClusterIds: string[] = expandedClusterIds,
-    nextLayoutOverrides: Record<string, { x: number; y: number }> = layoutOverrides,
+    nextExpandedClusterIds: string[],
+    nextLayoutOverrides: Record<string, { x: number; y: number }>,
   ) => {
     if (!courseId) return;
     writeStoredKnowledgeGraphState(courseId, {
@@ -237,7 +211,16 @@ export default function KnowledgeGraphViewer({
       expandedClusterIds: nextExpandedClusterIds,
       layoutOverrides: nextLayoutOverrides,
     });
-  }, [courseId, expandedClusterIds, layoutOverrides]);
+  }, [courseId]);
+
+  useEffect(() => {
+    runtimeStateRef.current = {
+      currentNodeId,
+      dynamicNodes,
+      expandedClusterIds,
+      layoutOverrides,
+    };
+  }, [currentNodeId, dynamicNodes, expandedClusterIds, layoutOverrides]);
 
   const refreshRecommendation = useCallback(async (
     targetCourseId?: string | null,
@@ -284,21 +267,23 @@ export default function KnowledgeGraphViewer({
     if (!target) return;
     selectNode(target);
     setCurrentNodeId(nodeId);
-    persistRuntimeState(nodeId, dynamicNodes);
-  }, [dynamicNodes, nodes, persistRuntimeState, selectNode]);
+    persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
+  }, [dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, selectNode]);
 
-  const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+  const handleNodeClick = useCallback((nodeId: string) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node) return;
     selectNode(node);
     setCurrentNodeId(node.id);
-    persistRuntimeState(node.id, dynamicNodes);
+    persistRuntimeState(node.id, dynamicNodes, expandedClusterIds, layoutOverrides);
     if (sessionId && courseId) {
-      void setCurrentGraphNode(sessionId, courseId, node.id).then((ok) => {
+      void setCurrentGraphNode(sessionId, courseId, nodeId).then((ok) => {
         if (ok) {
           void refreshRecommendation(courseId);
         }
       });
     }
-  }, [courseId, dynamicNodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
+  }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
 
   const toggleCluster = useCallback((clusterId: string) => {
     setExpandedClusterIds((prev) => {
@@ -308,11 +293,11 @@ export default function KnowledgeGraphViewer({
     });
   }, [currentNodeId, dynamicNodes, layoutOverrides, persistRuntimeState]);
 
-  const handleNodeDragStop = useCallback((_event: unknown, node: Node) => {
+  const handleNodeDragStop = useCallback((nodeId: string, position: CytoscapeGraphPoint) => {
     setLayoutOverrides((prev) => {
       const next = {
         ...prev,
-        [node.id]: { x: node.position.x, y: node.position.y },
+        [nodeId]: { x: position.x, y: position.y },
       };
       persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, next);
       return next;
@@ -366,13 +351,14 @@ export default function KnowledgeGraphViewer({
       });
     });
 
-    const flow = mapCourseKnowledgeGraphToFlow(
+    const mapped = mapCourseKnowledgeGraphToCytoscape(
       {
         ...(data as any),
         nodes: mergedNodes,
         edges: mergedEdges,
       },
       {
+        expandedLessonIds: expandedClusterIds,
         recommendedNodeId,
         currentNodeId: runtimeState.currentNodeId,
         progressMap: currentProgress,
@@ -386,34 +372,68 @@ export default function KnowledgeGraphViewer({
           : null,
       },
     );
-    const styledNodes = flow.nodes.map((node) => styleNodeForProgress(node, currentProgress[node.id]));
-    const clusterPositions = expandedClusterIds.reduce<Record<string, { x: number; y: number }>>((acc, clusterId) => {
-      const parent = styledNodes.find((node) => node.id === clusterId);
-      if (!parent) return acc;
-      const childIds = styledNodes
-        .filter((node) => (node.data as Record<string, unknown>).parentNodeId === clusterId)
+
+    const visibilityNodes = mapped.nodes.map((node) => ({
+      id: node.data.id,
+      parentId: node.data.parentId,
+      hierarchyLevel: node.data.hierarchyLevel,
+    }));
+    const backboneNodeIds = visibilityNodes
+      .filter((node) => node.hierarchyLevel === 0)
+      .map((node) => node.id);
+    const radialRadius = Math.max(220, backboneNodeIds.length * 56);
+    const backbonePositions = buildBackboneRadialLayout(backboneNodeIds, {
+      centerX: 420,
+      centerY: 420,
+      radius: radialRadius,
+    });
+
+    let resolvedPositions = applyCytoscapeLayoutOverrides(backbonePositions, layoutOverrides);
+    const expandedParentIds =
+      viewMode === "expanded"
+        ? expandedClusterIds.filter((clusterId) => backboneNodeIds.includes(clusterId))
+        : [];
+
+    expandedParentIds.forEach((clusterId) => {
+      const childIds = visibilityNodes
+        .filter((node) => node.parentId === clusterId)
         .map((node) => node.id);
-      return {
-        ...acc,
-        ...buildClusterLayout({
-          parentId: clusterId,
-          parentPosition: parent.position,
-          childIds,
-          radius: 160,
+      if (!childIds.length) return;
+      const parentPosition = resolvedPositions[clusterId] ?? backbonePositions[clusterId];
+      resolvedPositions = {
+        ...resolvedPositions,
+        ...buildExpandedClusterLayout(clusterId, childIds, {
+          parent: parentPosition,
+          radius: 176,
         }),
       };
-    }, {});
+      resolvedPositions = applyCytoscapeLayoutOverrides(resolvedPositions, layoutOverrides);
+    });
 
-    const positionedNodes = styledNodes.map((node) => ({
-      ...node,
-      position: applyLayoutOverrides(
-        { [node.id]: clusterPositions[node.id] ?? node.position },
-        layoutOverrides,
-      )[node.id] ?? node.position,
-    }));
-    const visibleNodes = filterVisibleFlowNodes(positionedNodes, viewMode, expandedClusterIds);
-    const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
-    const visibleEdges = filterVisibleFlowEdges(flow.edges, visibleNodeIds);
+    const visibleNodeIds = new Set(
+      viewMode === "expanded"
+        ? filterVisibleCytoscapeNodeIds(visibilityNodes, expandedParentIds)
+        : backboneNodeIds,
+    );
+
+    const visibleNodes = mapped.nodes
+      .filter((node) => visibleNodeIds.has(node.data.id))
+      .map((node, index) => ({
+        ...node,
+        id: node.data.id,
+        position: resolvedPositions[node.data.id] ?? {
+          x: 420 + index * 20,
+          y: 420 + index * 20,
+        },
+      }));
+    const visibleEdges = mapped.edges
+      .filter((edge) => visibleNodeIds.has(edge.data.source) && visibleNodeIds.has(edge.data.target))
+      .map((edge) => ({
+        ...edge,
+        id: edge.data.id,
+        source: edge.data.source,
+        target: edge.data.target,
+      }));
 
     setNodes(visibleNodes);
     setEdges(visibleEdges);
@@ -531,10 +551,6 @@ export default function KnowledgeGraphViewer({
       return merged;
     });
 
-    setNodes((prevNodes) => prevNodes.map((node) => (
-      node.id === nodeId ? styleNodeForProgress(node, status) : node
-    )));
-
     if (opts?.persistRemote !== false && sessionId) {
       void markNodeProgress(
         sessionId,
@@ -560,10 +576,10 @@ export default function KnowledgeGraphViewer({
     if (!target) return;
     const nodeData = buildSelectedNodeData(target);
     setCurrentNodeId(nodeId);
-    persistRuntimeState(nodeId, dynamicNodes);
+    persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
     updateNodeProgress(nodeId, "explored");
     onQuizNode?.(nodeData);
-  }, [buildSelectedNodeData, dynamicNodes, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
+  }, [buildSelectedNodeData, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
 
   const handleTimelineAction = useCallback((action: GraphTimelineAction, event: GraphTimelineEvent) => {
     const nodeId = String(action.payload?.node_id ?? event.node_id ?? "");
@@ -818,18 +834,23 @@ export default function KnowledgeGraphViewer({
 
   useEffect(() => {
     if (!sessionId) return;
-    
+
     let isConnected = true;
     const client = new UnifiedWSClient((event: StreamEvent) => {
-      // The push_custom_event emits a RESULT event with event_type = "graph_updated"
       if (event.type === "result" && event.metadata?.event_type === "graph_updated") {
         const state = event.metadata.state as GraphStatePayload;
         if (!state) return;
 
-        const nextCurrentNodeId = state.current_node_id || currentNodeId;
+        const nextCurrentNodeId = state.current_node_id || runtimeStateRef.current.currentNodeId;
+        const nextDynamicNodes = state.dynamic_nodes ?? [];
         setCurrentNodeId(nextCurrentNodeId);
-        setDynamicNodes(state.dynamic_nodes ?? []);
-        persistRuntimeState(nextCurrentNodeId, state.dynamic_nodes ?? []);
+        setDynamicNodes(nextDynamicNodes);
+        persistRuntimeState(
+          nextCurrentNodeId,
+          nextDynamicNodes,
+          runtimeStateRef.current.expandedClusterIds,
+          runtimeStateRef.current.layoutOverrides,
+        );
         if (courseId) {
           void refreshRecommendation(courseId);
         }
@@ -838,8 +859,7 @@ export default function KnowledgeGraphViewer({
 
     client.connect();
 
-    // Small delay to ensure WS is open before subscribing
-    setTimeout(() => {
+    const subscribeTimer = window.setTimeout(() => {
       if (isConnected && client.connected) {
         client.send({ type: "subscribe_session", session_id: sessionId });
       }
@@ -847,9 +867,10 @@ export default function KnowledgeGraphViewer({
 
     return () => {
       isConnected = false;
+      window.clearTimeout(subscribeTimer);
       client.disconnect();
     };
-  }, [courseId, currentNodeId, persistRuntimeState, refreshRecommendation, sessionId]);
+  }, [courseId, persistRuntimeState, refreshRecommendation, sessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !sessionId || !courseId) return;
@@ -872,6 +893,8 @@ export default function KnowledgeGraphViewer({
         persistRuntimeState(
           progressSnapshot.current_node_id || detail.node_id || "",
           progressSnapshot.dynamic_nodes ?? [],
+          runtimeStateRef.current.expandedClusterIds,
+          runtimeStateRef.current.layoutOverrides,
         );
       });
       void refreshRecommendation(courseId);
@@ -1033,16 +1056,22 @@ export default function KnowledgeGraphViewer({
         ) : null}
         <button
           type="button"
-          onClick={() => setLayoutOverrides({})}
+          onClick={() => {
+            setLayoutOverrides({});
+            persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, {});
+          }}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
         >
           Reset layout
         </button>
       </div>
-      <ReactFlow nodes={nodes} edges={edges} onNodeClick={handleNodeClick} onNodeDragStop={handleNodeDragStop} fitView>
-        <Background />
-        <Controls />
-      </ReactFlow>
+      <CytoscapeGraphCanvas
+        nodes={nodes}
+        edges={edges}
+        positions={Object.fromEntries(nodes.map((node) => [node.id, node.position]))}
+        onNodeClick={handleNodeClick}
+        onNodeDragStop={handleNodeDragStop}
+      />
       <NodeDetailPanel
         node={selectedNode}
         progressStatus={selectedNode ? progressMap[selectedNode.id] : undefined}
@@ -1067,14 +1096,14 @@ export default function KnowledgeGraphViewer({
         onAskAbout={(n) => {
           setSelectedNode(null);
           setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes);
+          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
           updateNodeProgress(n.id, "explored");
           onAskAbout?.(n);
         }}
         onQuizNode={(n) => {
           setSelectedNode(null);
           setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes);
+          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
           updateNodeProgress(n.id, "explored");
           onQuizNode?.(n);
         }}
