@@ -66,3 +66,9 @@ test("filterVisibleFlowEdges removes edges whose nodes are hidden", () => {
 test("KnowledgeGraphViewer keeps child-node clicks focused on the owning cluster", () => {
   assert.match(source, /setActiveClusterId\(node.data.parentId \|\| node.id\)/);
 });
+
+test("KnowledgeGraphViewer renders the focus inset without replacing the overview", () => {
+  assert.match(source, /overviewSlot=\{\(/);
+  assert.match(source, /focusInsetSlot=\{workspaceState\.showFocusInset \? \(/);
+  assert.match(source, /buildFocusedCytoscapeSubgraph/);
+});

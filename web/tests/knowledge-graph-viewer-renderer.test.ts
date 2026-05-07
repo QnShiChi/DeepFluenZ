@@ -7,8 +7,11 @@ const source = readFileSync(
   "utf8",
 );
 
-test("KnowledgeGraphViewer renders the Cytoscape canvas instead of ReactFlow", () => {
-  assert.match(source, /CytoscapeGraphCanvas/);
+test("KnowledgeGraphViewer renders a workspace shell with both graph surfaces", () => {
+  assert.match(source, /KnowledgeGraphWorkspaceShell/);
+  assert.match(source, /KnowledgeGraphFocusInset/);
+  assert.match(source, /KnowledgeGraphContextRail/);
+  assert.match(source, /surfaceVariant="overview"/);
   assert.doesNotMatch(source, /<ReactFlow|from "@xyflow\/react"/);
 });
 
@@ -25,4 +28,10 @@ test("KnowledgeGraphViewer tracks active cluster and forwards focus props to Cyt
   assert.match(source, /zoomTier,/);
   assert.match(source, /focusNodeId=\{activeClusterId \?\? selectedNode\?\.id \?\? null\}/);
   assert.match(source, /onZoomTierChange=\{setZoomTier\}/);
+});
+
+test("KnowledgeGraphViewer opens the focus inset from workspace state", () => {
+  assert.match(source, /const \[railMode, setRailMode\] = useState/);
+  assert.match(source, /buildWorkspaceState\(/);
+  assert.match(source, /workspaceState\.showFocusInset \? \(/);
 });

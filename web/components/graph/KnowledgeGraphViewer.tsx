@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import NodeDetailPanel, { type SelectedNodeData } from "./NodeDetailPanel";
+import type { SelectedNodeData } from "./NodeDetailPanel";
 import GraphHealthPanel from "./GraphHealthPanel";
 import LearningTimelineDrawer from "./LearningTimelineDrawer";
 import CytoscapeGraphCanvas from "./CytoscapeGraphCanvas";
+import KnowledgeGraphContextRail from "./KnowledgeGraphContextRail";
+import KnowledgeGraphFocusInset from "./KnowledgeGraphFocusInset";
+import KnowledgeGraphWorkspaceShell from "./KnowledgeGraphWorkspaceShell";
 import { UnifiedWSClient, StreamEvent } from "@/lib/unified-ws";
 import { apiUrl } from "@/lib/api";
 import { getSession } from "@/lib/session-api";
@@ -17,6 +20,7 @@ import {
   type KnowledgeGraphViewMode,
 } from "@/lib/course-knowledge-graph";
 import {
+  buildFocusedCytoscapeSubgraph,
   mapCourseKnowledgeGraphToCytoscape,
   type CytoscapeEdgeElement,
   type CytoscapeNodeElement,
@@ -53,9 +57,11 @@ import {
   applyCytoscapeLayoutOverrides,
   buildBackboneRadialLayout,
   buildExpandedClusterLayout,
+  buildFocusInsetLayout,
   type CytoscapeGraphPoint,
   filterVisibleCytoscapeNodeIds,
 } from "@/lib/cytoscape-knowledge-graph-layout";
+import { buildWorkspaceState } from "@/lib/knowledge-graph-workspace";
 import {
   analyzeGraphQa,
   applyGraphQaFix,
@@ -118,6 +124,7 @@ export default function KnowledgeGraphViewer({
   const [viewMode, setViewMode] = useState<KnowledgeGraphViewMode>("overview");
   const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
   const [zoomTier, setZoomTier] = useState<"far" | "mid" | "near">("mid");
+  const [railMode, setRailMode] = useState<"summary" | "chat" | "quiz">("summary");
   const [expandedClusterIds, setExpandedClusterIds] = useState<string[]>([]);
   const [layoutOverrides, setLayoutOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
@@ -338,6 +345,27 @@ export default function KnowledgeGraphViewer({
     () => Object.fromEntries(nodes.map((node) => [node.id, node.position])),
     [nodes],
   );
+
+  const workspaceState = useMemo(() => buildWorkspaceState({
+    activeClusterId,
+    selectedNodeId: selectedNode?.id ?? null,
+    railMode,
+  }), [activeClusterId, railMode, selectedNode?.id]);
+
+  const focusedGraph = useMemo(() => {
+    if (!workspaceState.focusClusterId) {
+      return { nodes: [], edges: [] };
+    }
+    return buildFocusedCytoscapeSubgraph({ nodes, edges }, workspaceState.focusClusterId);
+  }, [edges, nodes, workspaceState.focusClusterId]);
+
+  const focusInsetPositions = useMemo(() => {
+    if (!workspaceState.focusClusterId) return {};
+    const childIds = focusedGraph.nodes
+      .filter((node) => node.data.parentId === workspaceState.focusClusterId)
+      .map((node) => node.data.id);
+    return buildFocusInsetLayout(workspaceState.focusClusterId, childIds);
+  }, [focusedGraph.nodes, workspaceState.focusClusterId]);
 
   const applyCourseTemplate = useCallback((
     data: { nodes?: any[]; edges?: any[]; [key: string]: unknown },
@@ -613,6 +641,22 @@ export default function KnowledgeGraphViewer({
     updateNodeProgress(nodeId, "explored");
     onQuizNode?.(nodeData);
   }, [buildSelectedNodeData, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, onQuizNode, persistRuntimeState, updateNodeProgress]);
+
+  const handleAskAboutFromRail = useCallback((node: SelectedNodeData) => {
+    setRailMode("chat");
+    setCurrentNodeId(node.id);
+    persistRuntimeState(node.id, dynamicNodes, expandedClusterIds, layoutOverrides);
+    updateNodeProgress(node.id, "explored");
+    onAskAbout?.(node);
+  }, [dynamicNodes, expandedClusterIds, layoutOverrides, onAskAbout, persistRuntimeState, updateNodeProgress]);
+
+  const handleQuizFromRail = useCallback((node: SelectedNodeData) => {
+    setRailMode("quiz");
+    setCurrentNodeId(node.id);
+    persistRuntimeState(node.id, dynamicNodes, expandedClusterIds, layoutOverrides);
+    updateNodeProgress(node.id, "explored");
+    onQuizNode?.(node);
+  }, [dynamicNodes, expandedClusterIds, layoutOverrides, onQuizNode, persistRuntimeState, updateNodeProgress]);
 
   const handleTimelineAction = useCallback((action: GraphTimelineAction, event: GraphTimelineEvent) => {
     const nodeId = String(action.payload?.node_id ?? event.node_id ?? "");
@@ -976,94 +1020,7 @@ export default function KnowledgeGraphViewer({
   ]);
 
   return (
-    <div className="w-full h-full bg-slate-50 relative">
-      {recommendation ? (
-        <div className="absolute top-20 left-4 z-10 w-72 rounded-xl border border-blue-200 bg-white/95 p-3 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
-            {describeGraphRecommendation(recommendation).badge}
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600">
-            {describeGraphRecommendation(recommendation).message}
-          </p>
-          <button
-            onClick={() => openTimeline(recommendation.recommended_node_id || "")}
-            className="mt-2 text-[11px] font-medium text-blue-700 underline underline-offset-2"
-          >
-            {getGraphRecommendationTimelineCtaLabel(recommendation)}
-          </button>
-        </div>
-      ) : null}
-      {nextStepDecision ? (
-        <div className="absolute top-52 left-4 z-10 w-72 rounded-xl border border-sky-200 bg-white/95 p-3 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-600">
-            {describeNextStepDecision(nextStepDecision).badge}
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600">
-            {describeNextStepDecision(nextStepDecision).summary}
-          </p>
-        </div>
-      ) : null}
-      {reviewQueue.length ? (
-        <section className="absolute top-84 left-4 z-10 w-72 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
-                Review Queue
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-amber-950">
-                Một vài node nên ôn lại lúc này để tránh quên hoặc bị kẹt ở bước tiếp theo.
-              </p>
-            </div>
-            <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-amber-800">
-              {reviewQueue.length}
-            </span>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {reviewQueue.map((entry) => (
-              <button
-                key={entry.node_id}
-                onClick={() => openTimeline(entry.node_id)}
-                className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-white px-3 py-2 text-left transition-colors hover:bg-amber-100/60"
-              >
-                <div>
-                  <div className="text-sm font-medium text-slate-900">{entry.node_id}</div>
-                  <div className="mt-1 text-xs text-slate-600">{entry.review_mode}</div>
-                </div>
-                <div className="text-xs font-semibold text-amber-800">
-                  {Math.round(entry.score * 100)}%
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
-        <input 
-          type="file" 
-          accept=".json,.pdf" 
-          ref={fileInputRef} 
-          style={{ display: "none" }} 
-          onChange={handleImport} 
-        />
-        <button 
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isExtracting}
-          className="bg-white px-4 py-2 rounded shadow text-sm font-medium border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
-        >
-          {isExtracting ? KNOWLEDGE_GRAPH_COPY.extractingGraph : KNOWLEDGE_GRAPH_COPY.importSyllabus}
-        </button>
-      </div>
-      <GraphHealthPanel
-        report={qaReport}
-        draft={qaDraft}
-        busy={isMutatingQa}
-        onAnalyze={handleAnalyzeGraph}
-        onFocusIssue={handleFocusIssue}
-        onApplyFix={handleApplyFix}
-        onStageSafeFixes={handleStageSafeFixes}
-        onCommitDraft={handleCommitDraft}
-      />
+    <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#eff6ff,_#e2e8f0_42%,_#f8fafc_100%)] p-4">
       <LearningTimelineDrawer
         events={timelineEvents}
         requestKey={timelineRequestKey}
@@ -1072,87 +1029,171 @@ export default function KnowledgeGraphViewer({
         onAction={handleTimelineAction}
         onSelectNode={selectNodeById}
       />
-      <div className="absolute left-4 top-4 z-10 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setViewMode("overview")}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("expanded")}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-        >
-          Expanded
-        </button>
-        {selectedNode ? (
-          <button
-            type="button"
-            onClick={() => toggleCluster(selectedNode.id)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-          >
-            {expandedClusterIds.includes(selectedNode.id) ? "Thu gon cum" : "Mo cum"}
-          </button>
+      <KnowledgeGraphWorkspaceShell
+        overviewSlot={(
+          <div className="relative h-full w-full">
+            {recommendation ? (
+              <div className="absolute top-20 left-4 z-10 w-72 rounded-xl border border-blue-200 bg-white/95 p-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+                  {describeGraphRecommendation(recommendation).badge}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  {describeGraphRecommendation(recommendation).message}
+                </p>
+                <button
+                  onClick={() => openTimeline(recommendation.recommended_node_id || "")}
+                  className="mt-2 text-[11px] font-medium text-blue-700 underline underline-offset-2"
+                >
+                  {getGraphRecommendationTimelineCtaLabel(recommendation)}
+                </button>
+              </div>
+            ) : null}
+            {nextStepDecision ? (
+              <div className="absolute top-52 left-4 z-10 w-72 rounded-xl border border-sky-200 bg-white/95 p-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-600">
+                  {describeNextStepDecision(nextStepDecision).badge}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  {describeNextStepDecision(nextStepDecision).summary}
+                </p>
+              </div>
+            ) : null}
+            {reviewQueue.length ? (
+              <section className="absolute top-84 left-4 z-10 w-72 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                      Review Queue
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-950">
+                      Một vài node nên ôn lại lúc này để tránh quên hoặc bị kẹt ở bước tiếp theo.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-amber-800">
+                    {reviewQueue.length}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {reviewQueue.map((entry) => (
+                    <button
+                      key={entry.node_id}
+                      onClick={() => openTimeline(entry.node_id)}
+                      className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-white px-3 py-2 text-left transition-colors hover:bg-amber-100/60"
+                    >
+                      <div>
+                        <div className="text-sm font-medium text-slate-900">{entry.node_id}</div>
+                        <div className="mt-1 text-xs text-slate-600">{entry.review_mode}</div>
+                      </div>
+                      <div className="text-xs font-semibold text-amber-800">
+                        {Math.round(entry.score * 100)}%
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            <div className="absolute top-4 left-4 z-10 flex gap-2">
+              <input
+                type="file"
+                accept=".json,.pdf"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                onChange={handleImport}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isExtracting}
+                className="rounded border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow hover:bg-gray-50 disabled:opacity-50"
+              >
+                {isExtracting ? KNOWLEDGE_GRAPH_COPY.extractingGraph : KNOWLEDGE_GRAPH_COPY.importSyllabus}
+              </button>
+            </div>
+            <GraphHealthPanel
+              report={qaReport}
+              draft={qaDraft}
+              busy={isMutatingQa}
+              onAnalyze={handleAnalyzeGraph}
+              onFocusIssue={handleFocusIssue}
+              onApplyFix={handleApplyFix}
+              onStageSafeFixes={handleStageSafeFixes}
+              onCommitDraft={handleCommitDraft}
+            />
+            <div className="absolute left-4 top-4 z-10 flex translate-y-14 gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode("overview")}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("expanded")}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+              >
+                Expanded
+              </button>
+              {selectedNode ? (
+                <button
+                  type="button"
+                  onClick={() => toggleCluster(selectedNode.id)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                >
+                  {expandedClusterIds.includes(selectedNode.id) ? "Thu gon cum" : "Mo cum"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setLayoutOverrides({});
+                  persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, {});
+                  setFitViewportVersion((value) => value + 1);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+              >
+                Reset layout
+              </button>
+            </div>
+            <CytoscapeGraphCanvas
+              nodes={nodes}
+              edges={edges}
+              positions={cytoscapePositions}
+              onNodeClick={handleNodeClick}
+              onNodeDragStop={handleNodeDragStop}
+              onZoomTierChange={setZoomTier}
+              focusNodeId={activeClusterId ?? selectedNode?.id ?? null}
+              fitViewportVersion={fitViewportVersion}
+              surfaceVariant="overview"
+              className="h-full min-h-[720px]"
+            />
+          </div>
+        )}
+        focusInsetSlot={workspaceState.showFocusInset ? (
+          <KnowledgeGraphFocusInset
+            title={selectedNode?.title ?? workspaceState.focusClusterId ?? "Focused cluster"}
+            nodes={focusedGraph.nodes}
+            edges={focusedGraph.edges}
+            positions={focusInsetPositions}
+            onNodeClick={handleNodeClick}
+            onOpenDetail={() => selectedNode && setSelectedNode(selectedNode)}
+            onAskAbout={() => selectedNode && handleAskAboutFromRail(selectedNode)}
+            onStartQuiz={() => selectedNode && handleQuizFromRail(selectedNode)}
+            onPinCluster={() => workspaceState.focusClusterId && setActiveClusterId(workspaceState.focusClusterId)}
+            onClearFocus={() => {
+              setActiveClusterId(null);
+              setRailMode("summary");
+            }}
+          />
         ) : null}
-        <button
-          type="button"
-          onClick={() => {
-            setLayoutOverrides({});
-            persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, {});
-            setFitViewportVersion((value) => value + 1);
-          }}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-        >
-          Reset layout
-        </button>
-      </div>
-      <CytoscapeGraphCanvas
-        nodes={nodes}
-        edges={edges}
-        positions={cytoscapePositions}
-        onNodeClick={handleNodeClick}
-        onNodeDragStop={handleNodeDragStop}
-        onZoomTierChange={setZoomTier}
-        focusNodeId={activeClusterId ?? selectedNode?.id ?? null}
-        fitViewportVersion={fitViewportVersion}
-      />
-      <NodeDetailPanel
-        node={selectedNode}
-        progressStatus={selectedNode ? progressMap[selectedNode.id] : undefined}
-        recommendation={recommendation ? {
-          recommendedNodeId: recommendation.recommended_node_id,
-          badge: describeGraphRecommendation(recommendation).badge,
-          message: describeGraphRecommendation(recommendation).message,
-        } : undefined}
-        nextStepDecision={nextStepDecision ? {
-          badge: describeNextStepDecision(nextStepDecision).badge,
-          ctaLabel: describeNextStepDecision(nextStepDecision).ctaLabel,
-          message: describeNextStepDecision(nextStepDecision).summary,
-          targetNodeId: nextStepDecision.target_node_id,
-        } : undefined}
-        qaIssues={selectedNode?.qaIssues ?? []}
-        onApplyQaFix={(fixId) => {
-          handleApplyFix(fixId);
-        }}
-        onClose={() => setSelectedNode(null)}
-        onJumpToRecommended={handleJumpToRecommended}
-        onOpenTimeline={openTimeline}
-        onAskAbout={(n) => {
-          setSelectedNode(null);
-          setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
-          updateNodeProgress(n.id, "explored");
-          onAskAbout?.(n);
-        }}
-        onQuizNode={(n) => {
-          setSelectedNode(null);
-          setCurrentNodeId(n.id);
-          persistRuntimeState(n.id, dynamicNodes, expandedClusterIds, layoutOverrides);
-          updateNodeProgress(n.id, "explored");
-          onQuizNode?.(n);
-        }}
+        railSlot={(
+          <KnowledgeGraphContextRail
+            railMode={railMode}
+            node={selectedNode}
+            onAskAbout={handleAskAboutFromRail}
+            onQuizNode={handleQuizFromRail}
+            onCloseAction={() => setRailMode("summary")}
+          />
+        )}
       />
     </div>
   );
