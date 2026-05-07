@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import NodeDetailPanel, { type SelectedNodeData } from "./NodeDetailPanel";
 import GraphHealthPanel from "./GraphHealthPanel";
 import LearningTimelineDrawer from "./LearningTimelineDrawer";
@@ -13,6 +13,7 @@ import {
   writeStoredKnowledgeGraphCourseId,
 } from "@/lib/knowledge-graph-course";
 import {
+  resolveExpandedClusterIdsOnNodeClick,
   type KnowledgeGraphViewMode,
 } from "@/lib/course-knowledge-graph";
 import {
@@ -115,6 +116,8 @@ export default function KnowledgeGraphViewer({
   const [currentNodeId, setCurrentNodeId] = useState<string>("");
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
   const [viewMode, setViewMode] = useState<KnowledgeGraphViewMode>("overview");
+  const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
+  const [zoomTier, setZoomTier] = useState<"far" | "mid" | "near">("mid");
   const [expandedClusterIds, setExpandedClusterIds] = useState<string[]>([]);
   const [layoutOverrides, setLayoutOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
@@ -129,6 +132,7 @@ export default function KnowledgeGraphViewer({
   const [timelineEvents, setTimelineEvents] = useState<GraphTimelineEvent[]>([]);
   const [timelineRequestKey, setTimelineRequestKey] = useState(0);
   const [timelineFocusedNodeId, setTimelineFocusedNodeId] = useState("");
+  const [fitViewportVersion, setFitViewportVersion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const runtimeStateRef = useRef({
     currentNodeId: "",
@@ -272,15 +276,32 @@ export default function KnowledgeGraphViewer({
     if (!target) return;
     selectNode(target);
     setCurrentNodeId(nodeId);
+    setActiveClusterId(target.data.parentId || target.id);
     persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
   }, [dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, selectNode]);
 
   const handleNodeClick = useCallback((nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId);
     if (!node) return;
+    const nextExpandedClusterIds = resolveExpandedClusterIdsOnNodeClick(
+      (graphTemplate?.nodes as Array<{ node_id?: string; parent_node_id?: string }> | undefined) ?? [],
+      expandedClusterIds,
+      nodeId,
+    );
+
     selectNode(node);
     setCurrentNodeId(node.id);
-    persistRuntimeState(node.id, dynamicNodes, expandedClusterIds, layoutOverrides);
+    if (node.data.hierarchyLevel === 0) {
+      setActiveClusterId(node.id);
+    } else {
+      setActiveClusterId(node.data.parentId || node.id);
+    }
+    if (nextExpandedClusterIds !== expandedClusterIds) {
+      setExpandedClusterIds(nextExpandedClusterIds);
+      setViewMode("expanded");
+      setFitViewportVersion((value) => value + 1);
+    }
+    persistRuntimeState(node.id, dynamicNodes, nextExpandedClusterIds, layoutOverrides);
     if (sessionId && courseId) {
       void setCurrentGraphNode(sessionId, courseId, nodeId).then((ok) => {
         if (ok) {
@@ -288,8 +309,7 @@ export default function KnowledgeGraphViewer({
         }
       });
     }
-  }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
-  }, [courseId, dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
+  }, [courseId, dynamicNodes, expandedClusterIds, graphTemplate?.nodes, layoutOverrides, nodes, persistRuntimeState, refreshRecommendation, selectNode, sessionId]);
 
   const toggleCluster = useCallback((clusterId: string) => {
     setExpandedClusterIds((prev) => {
@@ -313,6 +333,11 @@ export default function KnowledgeGraphViewer({
   const handleJumpToRecommended = useCallback((nodeId: string) => {
     selectNodeById(nodeId);
   }, [selectNodeById]);
+
+  const cytoscapePositions = useMemo(
+    () => Object.fromEntries(nodes.map((node) => [node.id, node.position])),
+    [nodes],
+  );
 
   const applyCourseTemplate = useCallback((
     data: { nodes?: any[]; edges?: any[]; [key: string]: unknown },
@@ -365,6 +390,8 @@ export default function KnowledgeGraphViewer({
       },
       {
         expandedLessonIds: expandedClusterIds,
+        activeClusterId,
+        zoomTier,
         recommendedNodeId,
         currentNodeId: runtimeState.currentNodeId,
         progressMap: currentProgress,
@@ -443,7 +470,7 @@ export default function KnowledgeGraphViewer({
 
     setNodes(visibleNodes);
     setEdges(visibleEdges);
-  }, [activeRemediation, buildIssuesByNodeId, expandedClusterIds, layoutOverrides, qaReport, viewMode]);
+  }, [activeClusterId, activeRemediation, buildIssuesByNodeId, expandedClusterIds, layoutOverrides, qaReport, viewMode, zoomTier]);
 
   const refreshGraphQa = useCallback(async (targetCourseId: string) => {
     const report = await getGraphQaReport(targetCourseId).catch(() => null);
@@ -1074,6 +1101,7 @@ export default function KnowledgeGraphViewer({
           onClick={() => {
             setLayoutOverrides({});
             persistRuntimeState(currentNodeId, dynamicNodes, expandedClusterIds, {});
+            setFitViewportVersion((value) => value + 1);
           }}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
         >
@@ -1083,9 +1111,12 @@ export default function KnowledgeGraphViewer({
       <CytoscapeGraphCanvas
         nodes={nodes}
         edges={edges}
-        positions={Object.fromEntries(nodes.map((node) => [node.id, node.position]))}
+        positions={cytoscapePositions}
         onNodeClick={handleNodeClick}
         onNodeDragStop={handleNodeDragStop}
+        onZoomTierChange={setZoomTier}
+        focusNodeId={activeClusterId ?? selectedNode?.id ?? null}
+        fitViewportVersion={fitViewportVersion}
       />
       <NodeDetailPanel
         node={selectedNode}

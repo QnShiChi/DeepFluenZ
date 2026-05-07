@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   filterVisibleFlowEdges,
   filterVisibleFlowNodes,
 } from "../lib/course-knowledge-graph.ts";
+
+const source = readFileSync(
+  new URL("../components/graph/KnowledgeGraphViewer.tsx", import.meta.url),
+  "utf8",
+);
 
 test("filterVisibleFlowNodes hides child subtopics in overview mode", () => {
   const nodes = [
@@ -55,4 +61,8 @@ test("filterVisibleFlowEdges removes edges whose nodes are hidden", () => {
 
   const visibleEdges = filterVisibleFlowEdges(edges, new Set(["lesson-3"]));
   assert.equal(visibleEdges.length, 0);
+});
+
+test("KnowledgeGraphViewer keeps child-node clicks focused on the owning cluster", () => {
+  assert.match(source, /setActiveClusterId\(node.data.parentId \|\| node.id\)/);
 });
