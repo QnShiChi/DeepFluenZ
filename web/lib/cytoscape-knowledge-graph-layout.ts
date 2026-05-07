@@ -8,11 +8,15 @@ export function buildBackboneRadialLayout(
   options: { centerX: number; centerY: number; radius: number },
 ): Record<string, CytoscapeGraphPoint> {
   const result: Record<string, CytoscapeGraphPoint> = {};
-  const total = Math.max(nodeIds.length, 1);
+  const firstRingCapacity = 6;
+  const ringSpacing = 168;
 
   nodeIds.forEach((id, index) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total;
-    const radius = options.radius + index * 6;
+    const ringIndex = Math.floor(index / firstRingCapacity);
+    const indexWithinRing = index % firstRingCapacity;
+    const ringCount = Math.min(firstRingCapacity, nodeIds.length - ringIndex * firstRingCapacity);
+    const angle = -Math.PI / 2 + (Math.PI * 2 * indexWithinRing) / Math.max(ringCount, 1);
+    const radius = options.radius + ringIndex * ringSpacing + indexWithinRing * 8;
     result[id] = {
       x: Math.round(options.centerX + Math.cos(angle) * radius),
       y: Math.round(options.centerY + Math.sin(angle) * radius),
@@ -29,12 +33,14 @@ export function buildExpandedClusterLayout(
 ): Record<string, CytoscapeGraphPoint> {
   const result: Record<string, CytoscapeGraphPoint> = {};
   const total = Math.max(childIds.length, 1);
+  const densityBonus = Math.max(0, total - 4) * 18;
+  const effectiveRadius = options.radius + densityBonus;
 
   childIds.forEach((id, index) => {
     const angle = (Math.PI * 2 * index) / total;
     result[id] = {
-      x: Math.round(options.parent.x + Math.cos(angle) * options.radius),
-      y: Math.round(options.parent.y + Math.sin(angle) * options.radius),
+      x: Math.round(options.parent.x + Math.cos(angle) * effectiveRadius),
+      y: Math.round(options.parent.y + Math.sin(angle) * effectiveRadius),
     };
   });
 
