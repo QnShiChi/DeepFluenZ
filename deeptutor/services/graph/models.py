@@ -34,13 +34,14 @@ class StudentGraphState:
     dynamic_nodes: list[KnowledgeNode] = field(default_factory=list)
 
 
-GraphNodeType = Literal["topic", "concept", "skill", "application"]
+GraphNodeType = Literal["topic", "concept", "skill", "application", "lesson", "subtopic"]
 RelationType = Literal[
     "prerequisite",
     "builds_skill",
     "applies_to",
     "example_of",
     "part_of",
+    "contains",
     "related_to",
 ]
 Difficulty = Literal["easy", "medium", "hard"]
@@ -180,6 +181,13 @@ class KnowledgeGraphNode(BaseModel):
     node_type: GraphNodeType
     description: str = ""
     difficulty: Difficulty = "medium"
+    hierarchy_level: int = 0
+    parent_node_id: str = ""
+    ordinal: str = ""
+    source_label: str = ""
+    source_path: list[str] = Field(default_factory=list)
+    layout_group_id: str = ""
+    layout_priority: int = 0
     learning_outcomes: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
     related_questions: list[str] = Field(default_factory=list)
