@@ -22,8 +22,11 @@ def build_enrichment_prompt(graph_json: str) -> str:
         "Return raw JSON with optional `nodes` and `edges` only.\n"
         "Rules:\n"
         "- Every new node must include `node_id`, `title`, and `description`.\n"
+        "- Generate only a small number of high-value child nodes per lesson or subtopic.\n"
+        "- Child nodes must set `parent_node_id` to the lesson or subtopic they belong to.\n"
         "- New nodes may only use `concept`, `skill`, or `application` for their `node_type`.\n"
-        "- New edges may only use `builds_skill`, `applies_to`, `example_of`, or `related_to`.\n"
+        "- New edges may only use `contains`, `builds_skill`, `applies_to`, `example_of`, or `related_to`.\n"
+        "- Prefer reusable concepts like `constructor`, `main method`, or `encapsulation`, not trivial rephrasings of the parent title.\n"
         "- Cross-links must include `confidence` and a short `rationale`.\n"
         f"Backbone graph:\n{graph_json}"
     )

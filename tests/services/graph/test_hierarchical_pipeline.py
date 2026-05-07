@@ -116,3 +116,132 @@ def test_merge_course_graph_layers_preserves_numbered_lesson_hierarchy() -> None
         "1.1 Mot so khai niem",
         "1.2 Ngon ngu ho tro lap trinh huong doi tuong",
     ]
+
+
+def test_merge_course_graph_layers_keeps_enriched_concepts_under_subtopic_parent() -> None:
+    backbone = {
+        "course_id": "oop-java",
+        "title": "Lap trinh huong doi tuong",
+        "source_type": "syllabus_text",
+        "nodes": [
+            {
+                "node_id": "lesson-3",
+                "title": "Bai 3: Gioi thieu ve Java",
+                "description": "",
+                "node_type": "lesson",
+            },
+            {
+                "node_id": "subtopic-3-2",
+                "title": "3.2 Cau truc chuong trinh Java",
+                "description": "",
+                "node_type": "subtopic",
+                "parent_node_id": "lesson-3",
+            },
+        ],
+        "edges": [
+            {
+                "edge_id": "contains-3-2",
+                "source": "lesson-3",
+                "target": "subtopic-3-2",
+                "relation_type": "contains",
+            }
+        ],
+        "audit": {
+            "backbone_node_ids": ["lesson-3"],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    enriched = {
+        "nodes": [
+            {
+                "node_id": "concept-main-method",
+                "title": "Ham main",
+                "description": "Diem bat dau thuc thi chuong trinh Java.",
+                "node_type": "concept",
+                "parent_node_id": "subtopic-3-2",
+                "hierarchy_level": 2,
+            }
+        ],
+        "edges": [
+            {
+                "edge_id": "contains-main",
+                "source": "subtopic-3-2",
+                "target": "concept-main-method",
+                "relation_type": "contains",
+            }
+        ],
+    }
+
+    graph = merge_course_graph_layers(backbone, enriched)
+
+    concept = next(node for node in graph.nodes if node.node_id == "concept-main-method")
+    assert concept.parent_node_id == "subtopic-3-2"
+    assert concept.hierarchy_level == 2
+
+
+def test_merge_course_graph_layers_limits_child_concepts_per_subtopic() -> None:
+    backbone = {
+        "course_id": "oop-java",
+        "title": "Lap trinh huong doi tuong",
+        "source_type": "syllabus_text",
+        "nodes": [
+            {
+                "node_id": "lesson-3",
+                "title": "Bai 3: Gioi thieu ve Java",
+                "description": "",
+                "node_type": "lesson",
+            },
+            {
+                "node_id": "subtopic-3-2",
+                "title": "3.2 Cau truc chuong trinh Java",
+                "description": "",
+                "node_type": "subtopic",
+                "parent_node_id": "lesson-3",
+            },
+        ],
+        "edges": [
+            {
+                "edge_id": "contains-3-2",
+                "source": "lesson-3",
+                "target": "subtopic-3-2",
+                "relation_type": "contains",
+            }
+        ],
+        "audit": {
+            "backbone_node_ids": ["lesson-3"],
+            "enriched_node_ids": [],
+            "backbone_edge_ids": [],
+            "enriched_edge_ids": [],
+            "warnings": [],
+        },
+    }
+    enriched = {
+        "nodes": [
+            {
+                "node_id": f"concept-{index}",
+                "title": f"Concept {index}",
+                "description": "Bounded child concept",
+                "node_type": "concept",
+                "parent_node_id": "subtopic-3-2",
+                "hierarchy_level": 2,
+            }
+            for index in range(6)
+        ],
+        "edges": [
+            {
+                "edge_id": f"contains-{index}",
+                "source": "subtopic-3-2",
+                "target": f"concept-{index}",
+                "relation_type": "contains",
+            }
+            for index in range(6)
+        ],
+    }
+
+    graph = merge_course_graph_layers(backbone, enriched)
+
+    children = [node.node_id for node in graph.nodes if node.parent_node_id == "subtopic-3-2"]
+    assert len(children) == 5

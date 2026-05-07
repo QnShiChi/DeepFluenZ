@@ -8,6 +8,8 @@ from deeptutor.services.graph.normalizer import normalize_syllabus_text
 from deeptutor.services.graph.prompts import build_backbone_prompt, build_enrichment_prompt
 from deeptutor.services.graph.validator import validate_course_knowledge_graph
 
+MAX_CHILD_CONCEPTS_PER_SUBTOPIC = 5
+
 
 def _parse_llm_json(raw_text: str) -> dict:
     cleaned = (raw_text or "").strip()
@@ -138,6 +140,30 @@ def _sanitize_graph_fragment(
     return {"nodes": nodes, "edges": edges}
 
 
+def _prune_enriched_children(nodes: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    root_nodes: list[dict] = []
+    for node in nodes:
+        parent_id = str(node.get("parent_node_id") or "").strip()
+        if not parent_id:
+            root_nodes.append(node)
+            continue
+        grouped.setdefault(parent_id, []).append(node)
+
+    pruned = list(root_nodes)
+    for parent_id, group in grouped.items():
+        ordered = sorted(
+            group,
+            key=lambda item: (
+                int(item.get("layout_priority") or 0),
+                str(item.get("ordinal") or ""),
+                str(item.get("title") or ""),
+            ),
+        )
+        pruned.extend(ordered[:MAX_CHILD_CONCEPTS_PER_SUBTOPIC])
+    return pruned
+
+
 def merge_course_graph_layers(backbone_data: dict, enrichment_data: dict) -> CourseKnowledgeGraph:
     backbone = _sanitize_graph_fragment(
         backbone_data,
@@ -155,6 +181,20 @@ def merge_course_graph_layers(backbone_data: dict, enrichment_data: dict) -> Cou
         node_id_prefix="enrichment-node",
         edge_id_prefix="enrichment-edge",
     )
+    allowed_enriched_node_ids = {
+        node["node_id"]
+        for node in _prune_enriched_children(enrichment["nodes"])
+    }
+    enrichment["nodes"] = [
+        node for node in enrichment["nodes"] if node["node_id"] in allowed_enriched_node_ids
+    ]
+    enrichment["edges"] = [
+        edge
+        for edge in enrichment["edges"]
+        if edge["source"] in allowed_enriched_node_ids
+        or edge["target"] in allowed_enriched_node_ids
+        or edge["source"] in {node["node_id"] for node in backbone["nodes"]}
+    ]
 
     payload = {
         "course_id": str(backbone_data.get("course_id") or ""),
