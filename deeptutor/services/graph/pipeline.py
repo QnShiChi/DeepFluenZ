@@ -59,6 +59,13 @@ def _sanitize_node(raw_node: dict, *, index: int, default_node_type: str, defaul
         "node_type": node_type,
         "description": str(raw_node.get("description") or "").strip(),
         "difficulty": difficulty_aliases.get(difficulty, "medium"),
+        "hierarchy_level": int(raw_node.get("hierarchy_level") or 0),
+        "parent_node_id": str(raw_node.get("parent_node_id") or "").strip(),
+        "ordinal": str(raw_node.get("ordinal") or "").strip(),
+        "source_label": str(raw_node.get("source_label") or "").strip(),
+        "source_path": list(raw_node.get("source_path") or []),
+        "layout_group_id": str(raw_node.get("layout_group_id") or "").strip(),
+        "layout_priority": int(raw_node.get("layout_priority") or 0),
         "learning_outcomes": list(raw_node.get("learning_outcomes") or []),
         "examples": list(raw_node.get("examples") or []),
         "related_questions": list(raw_node.get("related_questions") or []),
@@ -131,6 +138,43 @@ def _sanitize_graph_fragment(
     return {"nodes": nodes, "edges": edges}
 
 
+def merge_course_graph_layers(backbone_data: dict, enrichment_data: dict) -> CourseKnowledgeGraph:
+    backbone = _sanitize_graph_fragment(
+        backbone_data,
+        default_node_type="lesson",
+        default_relation_type="contains",
+        default_confidence=1.0,
+        node_id_prefix="backbone-node",
+        edge_id_prefix="backbone-edge",
+    )
+    enrichment = _sanitize_graph_fragment(
+        enrichment_data,
+        default_node_type="concept",
+        default_relation_type="related_to",
+        default_confidence=0.5,
+        node_id_prefix="enrichment-node",
+        edge_id_prefix="enrichment-edge",
+    )
+
+    payload = {
+        "course_id": str(backbone_data.get("course_id") or ""),
+        "title": str(backbone_data.get("title") or ""),
+        "source_type": str(backbone_data.get("source_type") or "syllabus_text"),
+        "source_summary": str(backbone_data.get("source_summary") or ""),
+        "import_version": "v1",
+        "nodes": [*backbone["nodes"], *enrichment["nodes"]],
+        "edges": [*backbone["edges"], *enrichment["edges"]],
+        "audit": {
+            "backbone_node_ids": [node["node_id"] for node in backbone["nodes"]],
+            "enriched_node_ids": [node["node_id"] for node in enrichment["nodes"]],
+            "backbone_edge_ids": [edge["edge_id"] for edge in backbone["edges"]],
+            "enriched_edge_ids": [edge["edge_id"] for edge in enrichment["edges"]],
+            "warnings": list((backbone_data.get("audit") or {}).get("warnings") or []),
+        },
+    }
+    return CourseKnowledgeGraph.model_validate(payload)
+
+
 async def build_course_knowledge_graph(
     *,
     source_type: str,
@@ -169,7 +213,7 @@ async def build_course_knowledge_graph(
         ).model_dump(),
         "import_report": ImportReport(
             status="backbone_only",
-            topic_node_count=sum(1 for node in backbone_data["nodes"] if node["node_type"] == "topic"),
+            topic_node_count=sum(1 for node in backbone_data["nodes"] if node["node_type"] in {"topic", "lesson"}),
             enrichment_node_count=0,
             edge_count=len(backbone_edges),
             cross_link_count=0,

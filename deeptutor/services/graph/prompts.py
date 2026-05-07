@@ -6,8 +6,11 @@ def build_backbone_prompt(normalized_syllabus_json: str) -> str:
         "You are extracting the syllabus backbone for a course knowledge graph.\n"
         "Return raw JSON with `nodes` and `edges` only.\n"
         "Rules:\n"
-        "- Every node must include `node_id`, `title` (the actual descriptive topic name, not just chapter numbers), `description`, and `node_type` (must be `topic`).\n"
-        "- Only create `part_of` or `prerequisite` edges.\n"
+        "- Preserve numbered hierarchy such as `Bai 3`, `3.1`, `3.2`, `3.3`.\n"
+        "- Major rows like `Bai 3` must become `lesson` nodes.\n"
+        "- Numbered children like `3.1`, `3.2` must become `subtopic` nodes with `parent_node_id` pointing to the lesson.\n"
+        "- Every node must include `node_id`, `title`, `description`, `node_type`, and, when available, `parent_node_id`, `ordinal`, `source_label`, `source_path`.\n"
+        "- Emit `contains` edges for hierarchy and only use `prerequisite` when the syllabus clearly states dependency.\n"
         "- Every edge must include `edge_id`, `source`, `target`, `relation_type`, `confidence`, `rationale`, `source_refs`.\n"
         f"Normalized syllabus:\n{normalized_syllabus_json}"
     )
