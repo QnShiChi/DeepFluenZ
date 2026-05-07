@@ -51,6 +51,11 @@ export type GraphNodeProgressState =
 
 export type KnowledgeGraphViewMode = "overview" | "expanded";
 
+export interface KnowledgeGraphVisibilityState {
+  backboneNodeIds: string[];
+  visibleExpandedParentIds: string[];
+}
+
 function ensureUniqueId(
   baseId: string | null | undefined,
   seenIds: Set<string>,
@@ -69,6 +74,23 @@ function ensureUniqueId(
 
   seenIds.add(candidate);
   return candidate;
+}
+
+export function buildKnowledgeGraphVisibilityState(
+  graph: CourseKnowledgeGraph,
+  expandedLessonIds: string[],
+): KnowledgeGraphVisibilityState {
+  const backboneNodeIds = graph.nodes
+    .filter((node) => (node.hierarchy_level ?? 0) === 0)
+    .map((node) => String(node.node_id ?? ""))
+    .filter(Boolean);
+
+  const allowedParents = new Set(backboneNodeIds);
+
+  return {
+    backboneNodeIds,
+    visibleExpandedParentIds: expandedLessonIds.filter((id) => allowedParents.has(id)),
+  };
 }
 
 export function mapCourseKnowledgeGraphToFlow(

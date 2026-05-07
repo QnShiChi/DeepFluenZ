@@ -1,7 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mapCourseKnowledgeGraphToFlow } from "../lib/course-knowledge-graph.ts";
+import {
+  buildKnowledgeGraphVisibilityState,
+  mapCourseKnowledgeGraphToFlow,
+  type CourseKnowledgeGraph,
+} from "../lib/course-knowledge-graph.ts";
+
+test("buildKnowledgeGraphVisibilityState exposes backbone and expanded lesson ids", () => {
+  const graph: CourseKnowledgeGraph = {
+    course_id: "oop-java",
+    title: "OOP Java",
+    source_type: "syllabus_pdf",
+    nodes: [
+      { node_id: "lesson-1", title: "Bài 1", node_type: "lesson", hierarchy_level: 0 },
+      { node_id: "subtopic-1-1", title: "1.1", node_type: "subtopic", hierarchy_level: 1, parent_node_id: "lesson-1" },
+    ],
+    edges: [],
+    audit: {
+      backbone_node_ids: ["lesson-1"],
+      enriched_node_ids: ["subtopic-1-1"],
+      backbone_edge_ids: [],
+      enriched_edge_ids: [],
+      warnings: [],
+    },
+  };
+
+  const state = buildKnowledgeGraphVisibilityState(graph, ["lesson-1", "unknown-parent"]);
+
+  assert.deepEqual(state.backboneNodeIds, ["lesson-1"]);
+  assert.deepEqual(state.visibleExpandedParentIds, ["lesson-1"]);
+});
 
 test("mapCourseKnowledgeGraphToFlow preserves relation labels and node styling hints", () => {
   const flow = mapCourseKnowledgeGraphToFlow({
