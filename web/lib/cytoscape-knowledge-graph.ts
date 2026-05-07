@@ -24,6 +24,10 @@ export interface CytoscapeNodeElement {
     isCurrent: boolean;
     isVisibleInOverview: boolean;
     isVisibleInExpanded: boolean;
+    isActiveCluster: boolean;
+    isContextual: boolean;
+    isDimmed: boolean;
+    labelDensityMode: "hidden" | "compact" | "full";
   };
   classes: string;
 }
@@ -42,6 +46,8 @@ export interface CytoscapeEdgeElement {
 
 export interface CytoscapeKnowledgeGraphMapOptions {
   expandedLessonIds: string[];
+  activeClusterId?: string | null;
+  zoomTier?: "far" | "mid" | "near";
   currentNodeId?: string | null;
   recommendedNodeId?: string | null;
   progressMap?: Partial<Record<string, "explored" | "mastered">>;
@@ -57,10 +63,22 @@ function joinClasses(values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(" ");
 }
 
+function resolveLabelDensityMode(
+  hierarchyLevel: number,
+  zoomTier: "far" | "mid" | "near",
+  isContextual: boolean,
+): "hidden" | "compact" | "full" {
+  if (zoomTier === "near") return "full";
+  if (zoomTier === "mid") return hierarchyLevel === 0 || isContextual ? "full" : "compact";
+  return hierarchyLevel === 0 ? "compact" : "hidden";
+}
+
 export function mapCourseKnowledgeGraphToCytoscape(
   graph: CourseKnowledgeGraph,
   options: CytoscapeKnowledgeGraphMapOptions,
 ): { nodes: CytoscapeNodeElement[]; edges: CytoscapeEdgeElement[] } {
+  const activeClusterId = options.activeClusterId ?? null;
+  const zoomTier = options.zoomTier ?? "mid";
   const currentNodeId = options.currentNodeId ?? null;
   const recommendedNodeId = options.recommendedNodeId ?? null;
   const progressMap = options.progressMap ?? {};
@@ -89,6 +107,10 @@ export function mapCourseKnowledgeGraphToCytoscape(
     const isBackbone = backboneIds.has(id);
     const isVisibleInOverview = isBackbone;
     const isVisibleInExpanded = isBackbone || expandedIds.has(parentId);
+    const isActiveCluster = activeClusterId === id;
+    const isContextual = activeClusterId !== null && (id === activeClusterId || parentId === activeClusterId);
+    const isDimmed = activeClusterId !== null && !isContextual;
+    const labelDensityMode = resolveLabelDensityMode(node.hierarchy_level ?? 0, zoomTier, isContextual);
     const graphState: GraphNodeProgressState =
       progressMap[id] === "mastered"
         ? "mastered"
@@ -116,11 +138,15 @@ export function mapCourseKnowledgeGraphToCytoscape(
           hasUnmetPrerequisites,
           issueSeverity,
           issueCount: issueList.length,
-        isExpanded: expandedIds.has(id),
-        isRecommended: recommendedNodeId === id,
-        isCurrent: currentNodeId === id,
-        isVisibleInOverview,
-        isVisibleInExpanded,
+          isExpanded: expandedIds.has(id),
+          isRecommended: recommendedNodeId === id,
+          isCurrent: currentNodeId === id,
+          isVisibleInOverview,
+          isVisibleInExpanded,
+          isActiveCluster,
+          isContextual,
+          isDimmed,
+          labelDensityMode,
       },
       classes: joinClasses([
         `kind-${node.node_type}`,
@@ -128,6 +154,10 @@ export function mapCourseKnowledgeGraphToCytoscape(
         currentNodeId === id && "is-current",
         recommendedNodeId === id && "is-recommended",
         expandedIds.has(id) && "is-expanded",
+        isActiveCluster && "is-active-cluster",
+        isContextual && "is-contextual",
+        isDimmed && "is-dimmed",
+        `label-density-${labelDensityMode}`,
         isRemediationTarget && "is-remediation-target",
         `state-${graphState}`,
         issueSeverity && `issue-${issueSeverity}`,
