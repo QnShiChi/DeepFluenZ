@@ -370,3 +370,8 @@ This design is successful when:
 - the graph clearly feels like the primary workspace
 - edge relationships are easier to follow in both overview and local detail
 - the tutoring surface supports learning actions without visually dominating the graph
+
+## Implementation Note
+
+- Workspace implementation plan: `docs/superpowers/plans/2026-05-07-knowledge-graph-workspace.md`
+- Shipped architecture keeps Cytoscape for both overview and focus inset surfaces.

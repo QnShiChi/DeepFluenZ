@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildGraphRemediationRequest,
   buildKnowledgeGraphQuizMessage,
 } from "../lib/knowledge-graph-actions.ts";
+
+const railSource = readFileSync(
+  new URL("../components/graph/KnowledgeGraphContextRail.tsx", import.meta.url),
+  "utf8",
+);
 
 test("buildKnowledgeGraphQuizMessage produces a deep_question request without KB or rag coupling", () => {
   const request = buildKnowledgeGraphQuizMessage(
@@ -88,4 +94,10 @@ test("buildGraphRemediationRequest creates a remediation lesson payload", () => 
     String((request.config as { preference?: string }).preference),
     /ignore unrelated earlier chat topics/i,
   );
+});
+
+test("KnowledgeGraphContextRail supports summary and expanded action modes", () => {
+  assert.match(railSource, /railMode: "summary" \| "chat" \| "quiz"/);
+  assert.match(railSource, /railMode === "summary"/);
+  assert.match(railSource, /railMode !== "summary"/);
 });

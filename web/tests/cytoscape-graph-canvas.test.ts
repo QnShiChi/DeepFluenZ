@@ -22,6 +22,15 @@ test("createCytoscapeStylesheet differentiates prerequisite and contains edges",
   assert.notDeepEqual(containsRule?.style, prerequisiteRule?.style);
 });
 
+test("createCytoscapeStylesheet defines focus-surface edge emphasis", () => {
+  const stylesheet = createCytoscapeStylesheet("focus");
+  const focusContainsRule = stylesheet.find((rule) => rule.selector === "edge.relation-contains");
+  const focusPrereqRule = stylesheet.find((rule) => rule.selector === "edge.relation-prerequisite");
+
+  assert.equal(focusContainsRule?.style.opacity, 0.42);
+  assert.equal(focusPrereqRule?.style.width, 3.2);
+});
+
 test("createCytoscapeStylesheet defines hierarchy, dimming, and label-density rules", () => {
   const stylesheet = createCytoscapeStylesheet();
 
@@ -54,4 +63,9 @@ test("CytoscapeGraphCanvas tracks zoom tiers and uses animated focus fitting", (
   assert.match(source, /resolveZoomTier/);
   assert.match(source, /cy\.animate\(\{/);
   assert.match(source, /focusNodeId/);
+});
+
+test("CytoscapeGraphCanvas accepts a surface variant prop", () => {
+  assert.match(source, /surfaceVariant\?: "overview" \| "focus"/);
+  assert.match(source, /createCytoscapeStylesheet\(surfaceVariant\)/);
 });

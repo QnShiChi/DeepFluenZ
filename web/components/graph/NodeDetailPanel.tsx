@@ -45,6 +45,8 @@ interface NodeDetailPanelProps {
   onQuizNode: (node: SelectedNodeData) => void;
   onJumpToRecommended?: (nodeId: string) => void;
   onOpenTimeline?: (nodeId: string) => void;
+  className?: string;
+  embedded?: boolean;
 }
 
 const DIFFICULTY_STYLES: Record<string, string> = {
@@ -81,6 +83,8 @@ export default function NodeDetailPanel({
   onQuizNode,
   onJumpToRecommended,
   onOpenTimeline,
+  className,
+  embedded = false,
 }: NodeDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -109,7 +113,9 @@ export default function NodeDetailPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute top-4 right-4 bottom-4 z-20 w-80 max-w-[calc(100%-2rem)] bg-white rounded-2xl shadow-xl border border-slate-200 flex flex-col overflow-hidden animate-slide-in-right"
+      className={className ?? (embedded
+        ? "flex h-full flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white"
+        : "absolute top-4 right-4 bottom-4 z-20 w-80 max-w-[calc(100%-2rem)] rounded-2xl border border-slate-200 bg-white shadow-xl")}
       style={{
         animation: "slideInRight 0.25s ease-out",
       }}

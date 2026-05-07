@@ -23,7 +23,11 @@ export function createCytoscapeInteractionOptions(): CytoscapeInteractionOptions
   };
 }
 
-export function createCytoscapeStylesheet(): CytoscapeStylesheetRule[] {
+export function createCytoscapeStylesheet(
+  surfaceVariant: "overview" | "focus" = "overview",
+): CytoscapeStylesheetRule[] {
+  const isFocusSurface = surfaceVariant === "focus";
+
   return [
     {
       selector: "node",
@@ -144,8 +148,8 @@ export function createCytoscapeStylesheet(): CytoscapeStylesheetRule[] {
     {
       selector: "edge.relation-prerequisite",
       style: {
-        width: 2.4,
-        opacity: 0.56,
+        width: isFocusSurface ? 3.2 : 2.4,
+        opacity: isFocusSurface ? 0.82 : 0.56,
         "line-color": "#2563eb",
         "target-arrow-color": "#2563eb",
         "target-arrow-shape": "triangle",
@@ -154,9 +158,9 @@ export function createCytoscapeStylesheet(): CytoscapeStylesheetRule[] {
     {
       selector: "edge.relation-contains",
       style: {
-        width: 1.2,
-        opacity: 0.22,
-        "line-color": "#cbd5e1",
+        width: isFocusSurface ? 1.8 : 1.2,
+        opacity: isFocusSurface ? 0.42 : 0.22,
+        "line-color": isFocusSurface ? "#94a3b8" : "#cbd5e1",
         "target-arrow-shape": "none",
       },
     },

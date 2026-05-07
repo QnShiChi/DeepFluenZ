@@ -47,6 +47,27 @@ export function buildExpandedClusterLayout(
   return result;
 }
 
+export function buildFocusInsetLayout(
+  clusterId: string,
+  childIds: string[],
+): Record<string, CytoscapeGraphPoint> {
+  const center = { x: 280, y: 220 };
+  const radius = Math.max(156, 132 + childIds.length * 18);
+  const result: Record<string, CytoscapeGraphPoint> = {
+    [clusterId]: center,
+  };
+
+  childIds.forEach((childId, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(childIds.length, 1);
+    result[childId] = {
+      x: Math.round(center.x + Math.cos(angle) * radius),
+      y: Math.round(center.y + Math.sin(angle) * radius),
+    };
+  });
+
+  return result;
+}
+
 export function applyCytoscapeLayoutOverrides(
   base: Record<string, CytoscapeGraphPoint>,
   overrides: Record<string, CytoscapeGraphPoint>,

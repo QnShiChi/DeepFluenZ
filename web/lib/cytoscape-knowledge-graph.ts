@@ -190,3 +190,21 @@ export function mapCourseKnowledgeGraphToCytoscape(
 
   return { nodes, edges };
 }
+
+export function buildFocusedCytoscapeSubgraph(
+  graph: { nodes: CytoscapeNodeElement[]; edges: CytoscapeEdgeElement[] },
+  focusClusterId: string,
+): { nodes: CytoscapeNodeElement[]; edges: CytoscapeEdgeElement[] } {
+  const visibleNodeIds = new Set(
+    graph.nodes
+      .filter((node) => node.data.id === focusClusterId || node.data.parentId === focusClusterId)
+      .map((node) => node.data.id),
+  );
+
+  return {
+    nodes: graph.nodes.filter((node) => visibleNodeIds.has(node.data.id)),
+    edges: graph.edges.filter(
+      (edge) => visibleNodeIds.has(edge.data.source) && visibleNodeIds.has(edge.data.target),
+    ),
+  };
+}
