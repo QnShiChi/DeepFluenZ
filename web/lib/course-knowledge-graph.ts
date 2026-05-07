@@ -93,6 +93,21 @@ export function buildKnowledgeGraphVisibilityState(
   };
 }
 
+export function resolveExpandedClusterIdsOnNodeClick(
+  nodes: Array<{
+    node_id?: string;
+    parent_node_id?: string;
+  }>,
+  expandedClusterIds: string[],
+  clickedNodeId: string,
+): string[] {
+  const hasChildren = nodes.some((node) => String(node.parent_node_id ?? "") === clickedNodeId);
+  if (!hasChildren || expandedClusterIds.includes(clickedNodeId)) {
+    return expandedClusterIds;
+  }
+  return [...expandedClusterIds, clickedNodeId];
+}
+
 export function mapCourseKnowledgeGraphToFlow(
   graph: CourseKnowledgeGraph,
   options?: {

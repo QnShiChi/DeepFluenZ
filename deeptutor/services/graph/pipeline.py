@@ -12,6 +12,13 @@ from deeptutor.services.graph.validator import validate_course_knowledge_graph
 MAX_CHILD_CONCEPTS_PER_SUBTOPIC = 5
 LESSON_PATTERN = re.compile(r"^(?P<label>(?:bai|bài|chuong|chương|chapter|week)\s*\d+)\s*[:.\-)]?\s*(?P<title>.+)?$", re.IGNORECASE)
 SUBTOPIC_PATTERN = re.compile(r"^(?P<ordinal>\d+(?:\.\d+)+)\.?\s+(?P<title>.+)$")
+ALLOWED_NODE_TYPES = {"topic", "concept", "skill", "application", "lesson", "subtopic"}
+NODE_TYPE_ALIASES = {
+    "sub_topic": "subtopic",
+    "sub-topic": "subtopic",
+    "module": "lesson",
+    "chapter": "lesson",
+}
 
 
 def _parse_llm_json(raw_text: str) -> dict:
@@ -43,7 +50,10 @@ def _parse_llm_json(raw_text: str) -> dict:
 def _sanitize_node(raw_node: dict, *, index: int, default_node_type: str, default_id_prefix: str) -> dict:
     node_id = str(raw_node.get("node_id") or f"{default_id_prefix}-{index}").strip()
     title = str(raw_node.get("title") or node_id or f"Untitled {index + 1}").strip() or node_id
-    node_type = str(raw_node.get("node_type") or default_node_type).strip() or default_node_type
+    raw_node_type = str(raw_node.get("node_type") or default_node_type).strip().lower()
+    node_type = NODE_TYPE_ALIASES.get(raw_node_type, raw_node_type) or default_node_type
+    if node_type not in ALLOWED_NODE_TYPES:
+        node_type = default_node_type
     difficulty = str(raw_node.get("difficulty") or "medium").strip().lower()
     difficulty_aliases = {
         "low": "easy",

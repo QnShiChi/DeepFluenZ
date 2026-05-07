@@ -73,6 +73,25 @@ function resolveLabelDensityMode(
   return hierarchyLevel === 0 ? "compact" : "hidden";
 }
 
+function resolveBackboneSortKey(node: {
+  data?: { id?: string; ordinal?: string; label?: string; hierarchyLevel?: number };
+}): { order: number; fallback: string } {
+  const candidates = [
+    node.data?.ordinal ?? "",
+    node.data?.label ?? "",
+    node.data?.id ?? "",
+  ];
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/\d+/);
+    if (match) {
+      return { order: Number(match[0]), fallback: candidate };
+    }
+  }
+
+  return { order: Number.MAX_SAFE_INTEGER, fallback: node.data?.id ?? "" };
+}
+
 export function mapCourseKnowledgeGraphToCytoscape(
   graph: CourseKnowledgeGraph,
   options: CytoscapeKnowledgeGraphMapOptions,
@@ -188,7 +207,42 @@ export function mapCourseKnowledgeGraphToCytoscape(
     };
   });
 
-  return { nodes, edges };
+  const backboneNodes = nodes.filter((node) => node.data.hierarchyLevel === 0);
+  const backboneNodeIds = new Set(backboneNodes.map((node) => node.data.id));
+  const hasExplicitBackboneEdges = edges.some(
+    (edge) => backboneNodeIds.has(edge.data.source) && backboneNodeIds.has(edge.data.target),
+  );
+
+  const syntheticBackboneEdges = hasExplicitBackboneEdges
+    ? []
+    : backboneNodes
+        .slice()
+        .sort((left, right) => {
+          const leftKey = resolveBackboneSortKey(left);
+          const rightKey = resolveBackboneSortKey(right);
+          if (leftKey.order !== rightKey.order) {
+            return leftKey.order - rightKey.order;
+          }
+          return leftKey.fallback.localeCompare(rightKey.fallback);
+        })
+        .reduce<CytoscapeEdgeElement[]>((acc, node, index, ordered) => {
+          if (index === 0) return acc;
+          const previous = ordered[index - 1];
+          acc.push({
+            data: {
+              id: `synthetic-backbone-${previous.data.id}-${node.data.id}`,
+              source: previous.data.id,
+              target: node.data.id,
+              relationType: "backbone_path",
+              isVisibleInOverview: true,
+              isVisibleInExpanded: true,
+            },
+            classes: "relation-backbone_path is-synthetic-backbone is-directional",
+          });
+          return acc;
+        }, []);
+
+  return { nodes, edges: [...edges, ...syntheticBackboneEdges] };
 }
 
 export function buildFocusedCytoscapeSubgraph(

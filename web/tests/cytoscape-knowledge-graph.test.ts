@@ -171,6 +171,48 @@ test("mapCourseKnowledgeGraphToCytoscape hides non-contextual child labels at fa
   assert.equal(child?.classes.includes("label-density-hidden"), true);
 });
 
+test("mapCourseKnowledgeGraphToCytoscape synthesizes a backbone path when main concepts have no direct edges", () => {
+  const result = mapCourseKnowledgeGraphToCytoscape(
+    {
+      course_id: "oop-java",
+      title: "OOP Java",
+      source_type: "syllabus_pdf",
+      nodes: [
+        { node_id: "lesson-1", title: "Bai 1", node_type: "lesson", hierarchy_level: 0, ordinal: "1" },
+        { node_id: "lesson-2", title: "Bai 2", node_type: "lesson", hierarchy_level: 0, ordinal: "2" },
+        { node_id: "lesson-3", title: "Bai 3", node_type: "lesson", hierarchy_level: 0, ordinal: "3" },
+        {
+          node_id: "subtopic-1-1",
+          title: "1.1",
+          node_type: "subtopic",
+          hierarchy_level: 1,
+          parent_node_id: "lesson-1",
+        },
+      ],
+      edges: [
+        { edge_id: "contains-1-1", source: "lesson-1", target: "subtopic-1-1", relation_type: "contains" },
+      ],
+      audit: {
+        backbone_node_ids: ["lesson-1", "lesson-2", "lesson-3"],
+        enriched_node_ids: ["subtopic-1-1"],
+        backbone_edge_ids: [],
+        enriched_edge_ids: ["contains-1-1"],
+        warnings: [],
+      },
+    },
+    {
+      expandedLessonIds: [],
+      zoomTier: "mid",
+    },
+  );
+
+  const syntheticEdges = result.edges.filter((edge) => edge.classes.includes("relation-backbone_path"));
+  assert.deepEqual(
+    syntheticEdges.map((edge) => [edge.data.source, edge.data.target]),
+    [["lesson-1", "lesson-2"], ["lesson-2", "lesson-3"]],
+  );
+});
+
 test("buildFocusedCytoscapeSubgraph keeps the selected cluster and its local relations", () => {
   const focused = buildFocusedCytoscapeSubgraph(
     {

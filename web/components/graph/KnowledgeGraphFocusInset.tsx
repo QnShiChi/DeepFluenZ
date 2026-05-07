@@ -16,6 +16,7 @@ export default function KnowledgeGraphFocusInset({
   onOpenDetail,
   onAskAbout,
   onStartQuiz,
+  onOpenTimeline,
   onPinCluster,
   onClearFocus,
 }: {
@@ -27,6 +28,7 @@ export default function KnowledgeGraphFocusInset({
   onOpenDetail: () => void;
   onAskAbout: () => void;
   onStartQuiz: () => void;
+  onOpenTimeline: () => void;
   onPinCluster: () => void;
   onClearFocus: () => void;
 }) {
@@ -74,6 +76,12 @@ export default function KnowledgeGraphFocusInset({
           className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white"
         >
           Start Quiz
+        </button>
+        <button
+          onClick={onOpenTimeline}
+          className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white"
+        >
+          Timeline
         </button>
         <button
           onClick={onPinCluster}

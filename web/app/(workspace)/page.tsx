@@ -719,9 +719,10 @@ export default function HomePage() {
   return (
     <div className="flex h-full flex-row overflow-hidden bg-[var(--background)]">
       {/* Left Pane: Knowledge Graph */}
-      <div className="hidden lg:block w-[40%] shrink-0 border-r border-[var(--border)] relative bg-[var(--background)] z-10">
+      <div className="relative z-10 hidden shrink-0 border-r border-[var(--border)] bg-[var(--background)] lg:block lg:w-[65%]">
         <KnowledgeGraphViewer
           sessionId={state.sessionId ?? undefined}
+          layoutMode="embedded"
           onAskAbout={(node: SelectedNodeData) => {
             handleSelectCapability("");
             setTools(["rag"]);
@@ -748,7 +749,7 @@ export default function HomePage() {
       </div>
 
       {/* Right Pane: Action Area */}
-      <div className="relative flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:w-[35%] lg:flex-none">
         <div className="mx-auto flex h-full w-full max-w-[960px] flex-1 min-h-0 flex-col overflow-hidden px-6">
 
         {/* ===== Welcome / Messages ===== */}

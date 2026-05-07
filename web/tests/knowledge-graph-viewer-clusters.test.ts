@@ -69,6 +69,13 @@ test("KnowledgeGraphViewer keeps child-node clicks focused on the owning cluster
 
 test("KnowledgeGraphViewer renders the focus inset without replacing the overview", () => {
   assert.match(source, /overviewSlot=\{\(/);
-  assert.match(source, /focusInsetSlot=\{workspaceState\.showFocusInset \? \(/);
+  assert.match(source, /focusInsetSlot=\{workspaceState\.showFocusInset && isFocusInsetOpen \? \(/);
   assert.match(source, /buildFocusedCytoscapeSubgraph/);
+});
+
+test("KnowledgeGraphViewer lets users close the focus inset and reopens it on concept click", () => {
+  assert.match(source, /const \[isFocusInsetOpen, setIsFocusInsetOpen\] = useState/);
+  assert.match(source, /setIsFocusInsetOpen\(true\)/);
+  assert.match(source, /workspaceState\.showFocusInset && isFocusInsetOpen \? \(/);
+  assert.match(source, /onClearFocus=\{\(\) => \{/);
 });

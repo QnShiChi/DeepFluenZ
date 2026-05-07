@@ -38,3 +38,11 @@ test("KnowledgeGraphWorkspaceShell renders graph-first layout zones", () => {
   assert.match(source, /focusInsetSlot/);
   assert.match(source, /railSlot/);
 });
+
+test("KnowledgeGraphWorkspaceShell supports an embedded single-column mode", () => {
+  assert.match(source, /layoutMode\?: "standalone" \| "embedded"/);
+  assert.match(source, /layoutMode === "standalone"/);
+  assert.match(source, /max-w-\[320px\]/);
+  assert.match(source, /bottom-4/);
+  assert.match(source, /top-auto/);
+});

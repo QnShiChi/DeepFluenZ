@@ -12,12 +12,14 @@ import {
   createCytoscapeInteractionOptions,
   createCytoscapeStylesheet,
 } from "../../lib/cytoscape-graph-styles.ts";
+import { shouldHandleNodeTap } from "../../lib/cytoscape-graph-interactions.ts";
 
 export interface CytoscapeGraphCanvasProps {
   nodes: CytoscapeNodeElement[];
   edges: CytoscapeEdgeElement[];
   positions?: Record<string, CytoscapeGraphPoint>;
   surfaceVariant?: "overview" | "focus";
+  fitPadding?: number;
   className?: string;
   onNodeClick?: (nodeId: string) => void;
   onNodeDragStop?: (nodeId: string, position: CytoscapeGraphPoint) => void;
@@ -62,6 +64,7 @@ export default function CytoscapeGraphCanvas({
   edges,
   positions = {},
   surfaceVariant = "overview",
+  fitPadding = 132,
   className,
   onNodeClick,
   onNodeDragStop,
@@ -74,6 +77,7 @@ export default function CytoscapeGraphCanvas({
   const clickHandlerRef = useRef(onNodeClick);
   const dragHandlerRef = useRef(onNodeDragStop);
   const zoomTierHandlerRef = useRef(onZoomTierChange);
+  const lastDragStopRef = useRef<{ nodeId: string; timestampMs: number } | null>(null);
   const hasAutoFitRef = useRef(false);
   const lastFitViewportVersionRef = useRef<number | null>(null);
   const elements = useMemo(
@@ -100,12 +104,17 @@ export default function CytoscapeGraphCanvas({
 
     cy.on("tap", "node", (event) => {
       const nodeId = String(event.target.id());
+      if (!shouldHandleNodeTap(lastDragStopRef.current, nodeId, Date.now())) return;
       clickHandlerRef.current?.(nodeId);
     });
 
     cy.on("dragfree", "node", (event) => {
       const nodeId = String(event.target.id());
       const position = event.target.position();
+      lastDragStopRef.current = {
+        nodeId,
+        timestampMs: Date.now(),
+      };
       dragHandlerRef.current?.(nodeId, {
         x: Math.round(position.x),
         y: Math.round(position.y),
@@ -124,7 +133,7 @@ export default function CytoscapeGraphCanvas({
       cy.destroy();
       cyRef.current = null;
     };
-  }, [elements, surfaceVariant]);
+  }, []);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -149,7 +158,7 @@ export default function CytoscapeGraphCanvas({
     }
 
     if (!hasAutoFitRef.current) {
-      cy.fit(cy.elements(), 132);
+      cy.fit(cy.elements(), fitPadding);
       hasAutoFitRef.current = true;
       lastFitViewportVersionRef.current = fitViewportVersion;
       zoomTierHandlerRef.current?.(resolveZoomTier(cy.zoom()));
@@ -157,11 +166,11 @@ export default function CytoscapeGraphCanvas({
     }
 
     if (lastFitViewportVersionRef.current !== fitViewportVersion) {
-      cy.fit(cy.elements(), 132);
+      cy.fit(cy.elements(), fitPadding);
       lastFitViewportVersionRef.current = fitViewportVersion;
       zoomTierHandlerRef.current?.(resolveZoomTier(cy.zoom()));
     }
-  }, [elements.length, fitViewportVersion]);
+  }, [elements.length, fitPadding, fitViewportVersion]);
 
   useEffect(() => {
     const cy = cyRef.current;

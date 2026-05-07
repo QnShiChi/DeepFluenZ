@@ -39,15 +39,15 @@ export function createCytoscapeStylesheet(
         "border-width": 1.5,
         color: "#0f172a",
         "font-family": "Inter, ui-sans-serif, system-ui, sans-serif",
-        "font-size": 14,
+        "font-size": 15,
         "font-weight": 600,
         "text-wrap": "wrap",
-        "text-max-width": 146,
+        "text-max-width": 156,
         "text-valign": "center",
         "text-halign": "center",
         "text-margin-y": 0,
-        width: 132,
-        height: 132,
+        width: 144,
+        height: 144,
       },
     },
     {
@@ -58,11 +58,11 @@ export function createCytoscapeStylesheet(
         "background-gradient-direction": "to-bottom",
         "border-color": "#22c55e",
         "border-width": 3,
-        width: 184,
-        height: 184,
-        "font-size": 18,
+        width: 212,
+        height: 212,
+        "font-size": 21,
         "font-weight": 700,
-        "text-max-width": 156,
+        "text-max-width": 182,
       },
     },
     {
@@ -73,10 +73,10 @@ export function createCytoscapeStylesheet(
         "background-gradient-direction": "to-bottom",
         "border-color": "#3b82f6",
         "border-width": 2,
-        width: 136,
-        height: 136,
-        "font-size": 14,
-        "text-max-width": 112,
+        width: 152,
+        height: 152,
+        "font-size": 15,
+        "text-max-width": 126,
       },
     },
     {
@@ -103,13 +103,17 @@ export function createCytoscapeStylesheet(
     {
       selector: "node.label-density-hidden",
       style: {
-        label: "",
+        label: isFocusSurface ? "data(label)" : "",
+        "font-size": isFocusSurface ? 12 : 15,
+        "text-max-width": isFocusSurface ? 88 : 146,
       },
     },
     {
       selector: "node.label-density-compact",
       style: {
-        label: "data(ordinal)",
+        label: isFocusSurface ? "data(label)" : "data(label)",
+        "font-size": isFocusSurface ? 12 : 13,
+        "text-max-width": isFocusSurface ? 88 : 118,
       },
     },
     {
@@ -126,6 +130,37 @@ export function createCytoscapeStylesheet(
       style: {
         "border-color": "#0ea5e9",
         "border-width": 4,
+        "overlay-color": "#38bdf8",
+        "overlay-opacity": 0.1,
+      },
+    },
+    {
+      selector: "node.state-mastered",
+      style: {
+        "border-color": "#16a34a",
+        "border-width": 4,
+        "background-gradient-stop-colors": "#dcfce7 #bbf7d0",
+        "overlay-color": "#22c55e",
+        "overlay-opacity": 0.08,
+      },
+    },
+    {
+      selector: "node.state-explored",
+      style: {
+        "border-color": "#f59e0b",
+        "border-width": 3.5,
+        "background-gradient-stop-colors": "#fef3c7 #fde68a",
+        "overlay-color": "#f59e0b",
+        "overlay-opacity": 0.08,
+      },
+    },
+    {
+      selector: "node.state-needs_remediation",
+      style: {
+        "border-color": "#ef4444",
+        "border-width": 4,
+        "overlay-color": "#ef4444",
+        "overlay-opacity": 0.08,
       },
     },
     {
@@ -139,9 +174,9 @@ export function createCytoscapeStylesheet(
     {
       selector: "edge",
       style: {
-        width: 1.5,
-        opacity: 0.32,
-        "line-color": "#94a3b8",
+        width: 2.2,
+        opacity: 0.58,
+        "line-color": "#b7c5d8",
         "curve-style": "unbundled-bezier",
       },
     },
@@ -149,9 +184,19 @@ export function createCytoscapeStylesheet(
       selector: "edge.relation-prerequisite",
       style: {
         width: isFocusSurface ? 3.2 : 2.4,
-        opacity: isFocusSurface ? 0.82 : 0.56,
+        opacity: isFocusSurface ? 0.82 : 0.7,
         "line-color": "#2563eb",
         "target-arrow-color": "#2563eb",
+        "target-arrow-shape": "triangle",
+      },
+    },
+    {
+      selector: "edge.relation-backbone_path",
+      style: {
+        width: isFocusSurface ? 3.6 : 3.2,
+        opacity: isFocusSurface ? 0.92 : 0.84,
+        "line-color": "#7dd3fc",
+        "target-arrow-color": "#7dd3fc",
         "target-arrow-shape": "triangle",
       },
     },
@@ -159,8 +204,8 @@ export function createCytoscapeStylesheet(
       selector: "edge.relation-contains",
       style: {
         width: isFocusSurface ? 1.8 : 1.2,
-        opacity: isFocusSurface ? 0.42 : 0.22,
-        "line-color": isFocusSurface ? "#94a3b8" : "#cbd5e1",
+        opacity: isFocusSurface ? 0.42 : 0.4,
+        "line-color": isFocusSurface ? "#94a3b8" : "#b8c4d6",
         "target-arrow-shape": "none",
       },
     },

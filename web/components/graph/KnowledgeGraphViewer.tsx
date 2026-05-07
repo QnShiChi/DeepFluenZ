@@ -109,10 +109,12 @@ export default function KnowledgeGraphViewer({
   sessionId,
   onAskAbout,
   onQuizNode,
+  layoutMode = "standalone",
 }: {
   sessionId?: string;
   onAskAbout?: (node: SelectedNodeData) => void;
   onQuizNode?: (node: SelectedNodeData) => void;
+  layoutMode?: "standalone" | "embedded";
 }) {
   const [nodes, setNodes] = useState<RenderedGraphNode[]>(DEFAULT_NODES);
   const [edges, setEdges] = useState<RenderedGraphEdge[]>(DEFAULT_EDGES);
@@ -123,12 +125,14 @@ export default function KnowledgeGraphViewer({
   const [dynamicNodes, setDynamicNodes] = useState<DynamicKnowledgeGraphNode[]>([]);
   const [viewMode, setViewMode] = useState<KnowledgeGraphViewMode>("overview");
   const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
+  const [isFocusInsetOpen, setIsFocusInsetOpen] = useState(true);
   const [zoomTier, setZoomTier] = useState<"far" | "mid" | "near">("mid");
   const [railMode, setRailMode] = useState<"summary" | "chat" | "quiz">("summary");
   const [expandedClusterIds, setExpandedClusterIds] = useState<string[]>([]);
   const [layoutOverrides, setLayoutOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [activeRemediation, setActiveRemediation] = useState<ActiveGraphRemediationSnapshot | null>(null);
   const [recommendation, setRecommendation] = useState<GraphRecommendation | null>(null);
+  const [isRecommendationCardOpen, setIsRecommendationCardOpen] = useState(true);
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueEntrySnapshot[]>([]);
   const [nextStepDecision, setNextStepDecision] = useState<NextStepDecisionSnapshot | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
@@ -284,6 +288,7 @@ export default function KnowledgeGraphViewer({
     selectNode(target);
     setCurrentNodeId(nodeId);
     setActiveClusterId(target.data.parentId || target.id);
+    setIsFocusInsetOpen(true);
     persistRuntimeState(nodeId, dynamicNodes, expandedClusterIds, layoutOverrides);
   }, [dynamicNodes, expandedClusterIds, layoutOverrides, nodes, persistRuntimeState, selectNode]);
 
@@ -298,6 +303,7 @@ export default function KnowledgeGraphViewer({
 
     selectNode(node);
     setCurrentNodeId(node.id);
+    setIsFocusInsetOpen(true);
     if (node.data.hierarchyLevel === 0) {
       setActiveClusterId(node.id);
     } else {
@@ -597,6 +603,7 @@ export default function KnowledgeGraphViewer({
     const targetNode = resolveGraphQaIssueNode(nodes, issue);
     if (!targetNode) return;
     selectNode(targetNode);
+    setIsFocusInsetOpen(true);
   }, [nodes, selectNode]);
 
   const updateNodeProgress = useCallback((
@@ -860,6 +867,12 @@ export default function KnowledgeGraphViewer({
   }, [qaReport, resolveNodeSuggestedFixes, selectedNode?.id]);
 
   useEffect(() => {
+    if (recommendation) {
+      setIsRecommendationCardOpen(true);
+    }
+  }, [recommendation]);
+
+  useEffect(() => {
     if (!graphTemplate?.nodes) return;
     applyCourseTemplate(
       graphTemplate,
@@ -1030,36 +1043,83 @@ export default function KnowledgeGraphViewer({
         onSelectNode={selectNodeById}
       />
       <KnowledgeGraphWorkspaceShell
+        layoutMode={layoutMode}
         overviewSlot={(
           <div className="relative h-full w-full">
-            {recommendation ? (
-              <div className="absolute top-20 left-4 z-10 w-72 rounded-xl border border-blue-200 bg-white/95 p-3 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
-                  {describeGraphRecommendation(recommendation).badge}
+            {recommendation && isRecommendationCardOpen ? (
+              <div className={`absolute right-4 top-4 z-10 rounded-xl border border-blue-200 bg-white/95 p-3 shadow-sm ${
+                layoutMode === "standalone" ? "w-72" : "w-80 max-w-[calc(100%-2rem)]"
+              }`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+                    {describeGraphRecommendation(recommendation).badge}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsRecommendationCardOpen(false)}
+                    className="rounded-full border border-blue-200 px-2 py-1 text-[10px] font-medium text-blue-700"
+                  >
+                    Ẩn nhắc học
+                  </button>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
                   {describeGraphRecommendation(recommendation).message}
                 </p>
-                <button
-                  onClick={() => openTimeline(recommendation.recommended_node_id || "")}
-                  className="mt-2 text-[11px] font-medium text-blue-700 underline underline-offset-2"
-                >
-                  {getGraphRecommendationTimelineCtaLabel(recommendation)}
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => selectNodeById(recommendation.recommended_node_id || "")}
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700"
+                  >
+                    Đi tới node đề xuất
+                  </button>
+                  <button
+                    onClick={() => openTimeline(recommendation.recommended_node_id || "")}
+                    className="text-[11px] font-medium text-blue-700 underline underline-offset-2"
+                  >
+                    {getGraphRecommendationTimelineCtaLabel(recommendation)}
+                  </button>
+                </div>
               </div>
             ) : null}
+            {recommendation && !isRecommendationCardOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsRecommendationCardOpen(true)}
+                className="absolute right-4 top-4 z-10 rounded-full border border-blue-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-blue-700 shadow-sm"
+              >
+                Hiện nhắc học
+              </button>
+            ) : null}
             {nextStepDecision ? (
-              <div className="absolute top-52 left-4 z-10 w-72 rounded-xl border border-sky-200 bg-white/95 p-3 shadow-sm">
+              <div className={`absolute left-4 z-10 rounded-xl border border-sky-200 bg-white/95 p-3 shadow-sm ${
+                layoutMode === "standalone" ? "top-52 w-72" : "top-52 w-80 max-w-[calc(100%-2rem)]"
+              }`}>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-600">
                   {describeNextStepDecision(nextStepDecision).badge}
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
                   {describeNextStepDecision(nextStepDecision).summary}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => selectNodeById(nextStepDecision.target_node_id)}
+                    className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium text-sky-700"
+                  >
+                    {describeNextStepDecision(nextStepDecision).ctaLabel}
+                  </button>
+                  <button
+                    onClick={() => openTimeline(nextStepDecision.target_node_id)}
+                    className="text-[11px] font-medium text-sky-700 underline underline-offset-2"
+                  >
+                    Mở learning timeline
+                  </button>
+                </div>
               </div>
             ) : null}
             {reviewQueue.length ? (
-              <section className="absolute top-84 left-4 z-10 w-72 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
+              <section className={`absolute left-4 z-10 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm ${
+                layoutMode === "standalone" ? "top-84 w-72" : "bottom-4 w-80 max-w-[calc(100%-2rem)]"
+              }`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
@@ -1108,16 +1168,18 @@ export default function KnowledgeGraphViewer({
                 {isExtracting ? KNOWLEDGE_GRAPH_COPY.extractingGraph : KNOWLEDGE_GRAPH_COPY.importSyllabus}
               </button>
             </div>
-            <GraphHealthPanel
-              report={qaReport}
-              draft={qaDraft}
-              busy={isMutatingQa}
-              onAnalyze={handleAnalyzeGraph}
-              onFocusIssue={handleFocusIssue}
-              onApplyFix={handleApplyFix}
-              onStageSafeFixes={handleStageSafeFixes}
-              onCommitDraft={handleCommitDraft}
-            />
+            {layoutMode === "standalone" ? (
+              <GraphHealthPanel
+                report={qaReport}
+                draft={qaDraft}
+                busy={isMutatingQa}
+                onAnalyze={handleAnalyzeGraph}
+                onFocusIssue={handleFocusIssue}
+                onApplyFix={handleApplyFix}
+                onStageSafeFixes={handleStageSafeFixes}
+                onCommitDraft={handleCommitDraft}
+              />
+            ) : null}
             <div className="absolute left-4 top-4 z-10 flex translate-y-14 gap-2">
               <button
                 type="button"
@@ -1163,12 +1225,13 @@ export default function KnowledgeGraphViewer({
               onZoomTierChange={setZoomTier}
               focusNodeId={activeClusterId ?? selectedNode?.id ?? null}
               fitViewportVersion={fitViewportVersion}
+              fitPadding={layoutMode === "embedded" ? 72 : 132}
               surfaceVariant="overview"
               className="h-full min-h-[720px]"
             />
           </div>
         )}
-        focusInsetSlot={workspaceState.showFocusInset ? (
+        focusInsetSlot={workspaceState.showFocusInset && isFocusInsetOpen ? (
           <KnowledgeGraphFocusInset
             title={selectedNode?.title ?? workspaceState.focusClusterId ?? "Focused cluster"}
             nodes={focusedGraph.nodes}
@@ -1178,10 +1241,10 @@ export default function KnowledgeGraphViewer({
             onOpenDetail={() => selectedNode && setSelectedNode(selectedNode)}
             onAskAbout={() => selectedNode && handleAskAboutFromRail(selectedNode)}
             onStartQuiz={() => selectedNode && handleQuizFromRail(selectedNode)}
+            onOpenTimeline={() => selectedNode && openTimeline(selectedNode.id)}
             onPinCluster={() => workspaceState.focusClusterId && setActiveClusterId(workspaceState.focusClusterId)}
             onClearFocus={() => {
-              setActiveClusterId(null);
-              setRailMode("summary");
+              setIsFocusInsetOpen(false);
             }}
           />
         ) : null}
@@ -1189,8 +1252,17 @@ export default function KnowledgeGraphViewer({
           <KnowledgeGraphContextRail
             railMode={railMode}
             node={selectedNode}
+            progressStatus={selectedNode ? progressMap[selectedNode.id] : undefined}
+            recommendation={recommendation ? {
+              recommendedNodeId: recommendation.recommended_node_id,
+              badge: describeGraphRecommendation(recommendation).badge,
+              message: describeGraphRecommendation(recommendation).message,
+            } : undefined}
+            nextStepDecision={nextStepDecision}
             onAskAbout={handleAskAboutFromRail}
             onQuizNode={handleQuizFromRail}
+            onJumpToRecommended={handleJumpToRecommended}
+            onOpenTimeline={openTimeline}
             onCloseAction={() => setRailMode("summary")}
           />
         )}

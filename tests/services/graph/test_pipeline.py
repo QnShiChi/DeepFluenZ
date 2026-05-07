@@ -320,6 +320,51 @@ async def test_build_course_knowledge_graph_normalizes_difficulty_labels() -> No
 
 
 @pytest.mark.anyio
+async def test_build_course_knowledge_graph_normalizes_invalid_enrichment_node_type() -> None:
+    llm = StubLlm(
+        [
+            """
+            {
+              "nodes": [
+                {
+                  "node_id": "lesson-1",
+                  "title": "Bai 1",
+                  "node_type": "lesson"
+                }
+              ],
+              "edges": []
+            }
+            """,
+            """
+            {
+              "nodes": [
+                {
+                  "node_id": "example-4-5",
+                  "title": "Vi du xay dung doi tuong",
+                  "node_type": "example",
+                  "parent_node_id": "lesson-1"
+                }
+              ],
+              "edges": []
+            }
+            """,
+        ]
+    )
+
+    graph = await build_course_knowledge_graph(
+        source_type="syllabus_pdf",
+        course_id="oop-java",
+        title="OOP Java",
+        source_text="Bai 1: Xay dung doi tuong",
+        llm=llm,
+    )
+
+    assert len(graph.nodes) == 2
+    assert graph.nodes[1].node_id == "example-4-5"
+    assert graph.nodes[1].node_type == "concept"
+
+
+@pytest.mark.anyio
 async def test_build_course_knowledge_graph_requests_json_mode_for_llm_calls() -> None:
     llm = RecordingStubLlm(
         [

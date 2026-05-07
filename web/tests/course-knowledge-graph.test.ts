@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildKnowledgeGraphVisibilityState,
   mapCourseKnowledgeGraphToFlow,
+  resolveExpandedClusterIdsOnNodeClick,
   type CourseKnowledgeGraph,
 } from "../lib/course-knowledge-graph.ts";
 
@@ -251,6 +252,25 @@ test("mapCourseKnowledgeGraphToFlow marks the recommended node with styling meta
 
   assert.equal(flow.nodes[0].data.isRecommended, true);
   assert.match(String(flow.nodes[0].style?.border), /3px/);
+});
+
+test("resolveExpandedClusterIdsOnNodeClick expands a parent node that has hidden children", () => {
+  const nextExpandedIds = resolveExpandedClusterIdsOnNodeClick(
+    [
+      { node_id: "lesson-3", title: "Bai 3", node_type: "lesson", hierarchy_level: 0 },
+      {
+        node_id: "subtopic-3-2",
+        title: "3.2",
+        node_type: "subtopic",
+        hierarchy_level: 1,
+        parent_node_id: "lesson-3",
+      },
+    ],
+    [],
+    "lesson-3",
+  );
+
+  assert.deepEqual(nextExpandedIds, ["lesson-3"]);
 });
 
 test("mapCourseKnowledgeGraphToFlow marks remediation target nodes", () => {
