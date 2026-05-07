@@ -1,9 +1,16 @@
 export interface CourseKnowledgeGraphNode {
   node_id?: string;
   title: string;
-  node_type: "topic" | "concept" | "skill" | "application";
+  node_type: "topic" | "concept" | "skill" | "application" | "lesson" | "subtopic";
   description?: string;
   difficulty?: string;
+  hierarchy_level?: number;
+  parent_node_id?: string;
+  ordinal?: string;
+  source_label?: string;
+  source_path?: string[];
+  layout_group_id?: string;
+  layout_priority?: number;
 }
 
 export interface CourseKnowledgeGraphEdge {
@@ -136,13 +143,20 @@ export function mapCourseKnowledgeGraphToFlow(
     return {
       id,
       position: {
-        x: node.node_type === "topic" ? 250 : 520,
+        x: node.node_type === "topic" || node.node_type === "lesson" ? 250 : 520,
         y: 60 + index * 120,
       },
       data: {
         label: node.title,
         description: node.description ?? "",
         nodeType: node.node_type,
+        hierarchyLevel: node.hierarchy_level ?? 0,
+        parentNodeId: node.parent_node_id ?? "",
+        ordinal: node.ordinal ?? "",
+        sourceLabel: node.source_label ?? "",
+        sourcePath: node.source_path ?? [],
+        layoutGroupId: node.layout_group_id ?? node.parent_node_id ?? id,
+        layoutPriority: node.layout_priority ?? 0,
         difficulty: node.difficulty ?? "medium",
         issueSeverity,
         issueCount: nodeIssues.length,
